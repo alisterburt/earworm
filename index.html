@@ -1023,6 +1023,7 @@ function toggleQuiz(){
   if(S.quiz) S.mode='listen';
   setModeButtons();
   renderMarkers();
+  drawWave(); // waveWrap width changes when the roll's key column collapses
 }
 modeNotate.addEventListener('click',()=>{ S.mode='notate'; if(S.quiz) toggleQuiz(); else setModeButtons(); });
 modeListen.addEventListener('click',()=>{ S.mode='listen'; setModeButtons(); });
