@@ -282,13 +282,13 @@
       <button id="loopBtn" title="Loop the selected region (drag on waveform to select)">Loop</button>
       <button id="clearLoopBtn" title="Clear loop region">✕ region</button>
       <span class="spacer"></span>
-      <button id="quizBtn" title="Hide degree labels to test yourself">Quiz mode</button>
+      <button id="quizBtn" title="Reveal the notes on the roll and keyboard">Show Notes</button>
     </div>
     <div class="hints">
       <kbd>space</kbd> play / pause &nbsp;·&nbsp; <b>track</b> / <b>notes</b> sliders mix the recording with the scale-degree synth (click a label to mute)
       &nbsp;·&nbsp; <kbd>1</kbd>–<kbd>7</kbd> play degree<span class="ann-only">&nbsp;(also adds a note at the playhead — <b>hold</b> the key while the song plays to give it length)</span>
       &nbsp;·&nbsp; <kbd>shift</kbd>+<kbd>1–7</kbd> upper octave &nbsp;·&nbsp; click waveform to seek, drag to set a loop region
-      &nbsp;·&nbsp; <kbd>L</kbd> loop &nbsp;·&nbsp; <kbd>Q</kbd> quiz<span class="ann-only">&nbsp;·&nbsp; drag notes to move in time or pitch, drag a note's right edge to resize, click to select, <kbd>⌫</kbd> to delete</span>
+      &nbsp;·&nbsp; <kbd>L</kbd> loop &nbsp;·&nbsp; <kbd>Q</kbd> show / hide notes<span class="ann-only">&nbsp;·&nbsp; drag notes to move in time or pitch, drag a note's right edge to resize, click to select, <kbd>⌫</kbd> to delete</span>
     </div>
   </div>
 </div>
@@ -680,7 +680,7 @@ async function loadIntoPlayer({arrayBuffer, mime, title, keyName, markers, edita
   S.editable=!!editable; S.source=source;
   S.loop=null; S.looping=false; loopBtn.classList.remove('on'); drawLoop();
   S.selected=-1;
-  if(S.quiz && editable){ S.quiz=false; quizBtn.classList.remove('on'); document.body.classList.remove('quiz'); }
+  setQuiz(!editable); // collection melodies open with degrees hidden; the annotater needs them visible
   playerPanel.classList.toggle('editable',S.editable);
   document.body.classList.toggle('editable',S.editable);
   nowPlaying.textContent=title||'untitled';
@@ -1012,10 +1012,15 @@ loopBtn.addEventListener('click',()=>{
 });
 clearLoopBtn.addEventListener('click',()=>{ S.loop=null; S.looping=false; loopBtn.classList.remove('on'); drawLoop(); });
 quizBtn.addEventListener('click',toggleQuiz);
+// degrees are hidden by default so you test your ear first; the button reveals the answers
+function setQuiz(on){
+  S.quiz=on;
+  document.body.classList.toggle('quiz',on);
+  quizBtn.textContent=on?'Show Notes':'Hide Notes';
+  quizBtn.title=on?'Reveal the notes on the roll and keyboard':'Hide the notes to test your ear';
+}
 function toggleQuiz(){
-  S.quiz=!S.quiz;
-  quizBtn.classList.toggle('on',S.quiz);
-  document.body.classList.toggle('quiz',S.quiz);
+  setQuiz(!S.quiz);
   renderMarkers();
   drawWave(); // waveWrap width changes when the roll's key column collapses
 }
