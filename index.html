@@ -29,9 +29,13 @@
   .tagline{color:var(--dim);font-size:13px}
   .eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);margin:26px 0 10px}
 
-  .tabs{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;width:max-content}
-  .tabs button{border:none;border-radius:0;padding:9px 18px;background:var(--panel2)}
-  .tabs button.on{background:#2a3140;color:var(--amber)}
+  #homeLink{cursor:pointer}
+  #homeLink:hover .tagline{color:var(--text)}
+  .toolnav{display:flex;align-items:baseline;gap:14px}
+  .toolnav .toolslabel{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
+  .toollink{background:none;border:none;padding:2px 0;font-size:13px;color:var(--dim)}
+  .toollink:hover{color:var(--text)}
+  .toollink.on{background:none;color:var(--amber)}
 
   /* ---------- collection ---------- */
   #collectionList{display:flex;flex-direction:column;gap:6px}
@@ -156,27 +160,27 @@
 <body>
 
 <header>
-  <div>
+  <div id="homeLink" title="Back to the notebook">
     <div class="wordmark">earworm<span class="tick">′</span></div>
     <div class="tagline">melody notebook</div>
   </div>
-  <div class="tabs" role="tablist">
-    <button id="tabCollection" class="on">Notebook</button>
-    <button id="tabAnnotater">Annotater</button>
-    <button id="tabClipper">Clipper</button>
+  <div class="toolnav">
+    <span class="toolslabel">tools:</span>
+    <button id="tabAnnotater" class="toollink">Annotater</button>
+    <button id="tabClipper" class="toollink">Clipper</button>
   </div>
 </header>
 
 <!-- ============ COLLECTION ============ -->
 <section id="collectionPanel">
-  <div class="eyebrow">Collection</div>
+  <div class="eyebrow">Melodies</div>
   <div id="collectionList"></div>
   <p class="note" id="collectionNote" style="margin-top:10px"></p>
 </section>
 
 <!-- ============ ANNOTATER ============ -->
 <section id="annotaterPanel" style="display:none">
-  <div class="eyebrow">Annotate a melody</div>
+  <div class="eyebrow">Annotate a melody with scale degrees for earworm</div>
   <div class="setup">
     <button class="filebtn primary">Open audio<input type="file" id="fileInput" accept="audio/*"></button>
     <span id="annSongName">no file loaded</span>
@@ -236,7 +240,7 @@
 <div class="eyebrow">Waveform &amp; notation</div>
 <div class="wavepanel" id="playerPanel">
   <div class="empty-hint" id="emptyHint">
-    <b>Collection:</b> pick a melody above. &nbsp;·&nbsp; <b>Annotater:</b> open an audio file to annotate.<br>
+    <b>Melodies:</b> pick a melody above. &nbsp;·&nbsp; <b>Annotater:</b> open an audio file to annotate.<br>
     Space plays. In the annotater, tap <b>1–7</b> at the playhead to mark what you hear.
   </div>
   <div id="waveArea" style="display:none">
@@ -336,7 +340,7 @@ const S = {
 
 /* ============================== dom ============================== */
 const $ = id => document.getElementById(id);
-const tabCollection=$('tabCollection'), tabAnnotater=$('tabAnnotater');
+const homeLink=$('homeLink'), tabAnnotater=$('tabAnnotater');
 const collectionPanel=$('collectionPanel'), annotaterPanel=$('annotaterPanel');
 const collectionList=$('collectionList'), collectionNote=$('collectionNote');
 const fileInput=$('fileInput'), annSongName=$('annSongName'), titleInput=$('titleInput'), keySelect=$('keySelect');
@@ -362,7 +366,6 @@ KEYS.forEach(k=>{ const o=document.createElement('option'); o.value=k.name; o.te
 let currentTab='collection';
 function showTab(which){
   currentTab=which;
-  tabCollection.classList.toggle('on',which==='collection');
   tabAnnotater.classList.toggle('on',which==='annotater');
   tabClipper.classList.toggle('on',which==='clipper');
   collectionPanel.style.display=which==='collection'?'block':'none';
@@ -371,7 +374,7 @@ function showTab(which){
   sharedBelow.style.display=which==='clipper'?'none':'block';
   if(which==='clipper'){ drawClipWave(); renderClipUI(); }
 }
-tabCollection.addEventListener('click',()=>showTab('collection'));
+homeLink.addEventListener('click',()=>showTab('collection'));
 tabAnnotater.addEventListener('click',()=>showTab('annotater'));
 tabClipper.addEventListener('click',()=>showTab('clipper'));
 
@@ -697,7 +700,7 @@ async function loadManifest(){
     manifest=await res.json();
   }catch(err){
     manifest=null;
-    collectionNote.textContent='No collection found here. This view works once the site is served from the repo (GitHub Pages or `python -m http.server`), where melodies/manifest.json exists. Use the Annotater tab to annotate and export melodies in the meantime.';
+    collectionNote.textContent='No melodies found here. This view works once the site is served from the repo (GitHub Pages or `python -m http.server`), where melodies/manifest.json exists. Use the Annotater tab to annotate and export melodies in the meantime.';
     return;
   }
   renderCollection();
@@ -706,7 +709,7 @@ function renderCollection(){
   collectionList.innerHTML='';
   const items=(manifest&&manifest.melodies)||[];
   if(!items.length){
-    collectionNote.textContent='The collection is empty. Annotate something in the Annotater, export it, then: drop the file in melodies/, run add_melody.py, commit, push.';
+    collectionNote.textContent='The notebook is empty. Annotate something in the Annotater, export it, then: drop the file in melodies/, run add_melody.py, commit, push.';
     return;
   }
   collectionNote.textContent=items.length+(items.length===1?' melody':' melodies')+' in the notebook.';
