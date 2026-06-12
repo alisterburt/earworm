@@ -113,9 +113,6 @@
     border-bottom-width:2px;border-radius:4px;padding:1px 5px;font-size:11px}
   .ann-only{display:none}
   .editable .ann-only{display:inline-flex}
-  .modeswitch{display:flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
-  .modeswitch button{border:none;border-radius:0;background:var(--panel)}
-  .modeswitch button.on{background:#2a3140}
 
   /* ---------- clipper ---------- */
   #clipWaveWrap{position:relative;height:120px;border-radius:6px;overflow:hidden;background:#10141a;
@@ -282,14 +279,10 @@
       <button id="clearLoopBtn" title="Clear loop region">✕ region</button>
       <span class="spacer"></span>
       <button id="quizBtn" title="Hide degree labels to test yourself">Quiz mode</button>
-      <div class="modeswitch ann-only" title="Notate: number keys add markers. Listen: number keys only play notes.">
-        <button id="modeNotate" class="on">Notate</button>
-        <button id="modeListen">Listen</button>
-      </div>
     </div>
     <div class="hints">
       <kbd>space</kbd> play / pause &nbsp;·&nbsp; <b>track</b> / <b>notes</b> sliders mix the recording with the scale-degree synth (click a label to mute)
-      &nbsp;·&nbsp; <kbd>1</kbd>–<kbd>7</kbd> play degree<span class="ann-only">&nbsp;(notate mode also adds a note at the playhead — <b>hold</b> the key while the song plays to give it length)</span>
+      &nbsp;·&nbsp; <kbd>1</kbd>–<kbd>7</kbd> play degree<span class="ann-only">&nbsp;(also adds a note at the playhead — <b>hold</b> the key while the song plays to give it length)</span>
       &nbsp;·&nbsp; <kbd>shift</kbd>+<kbd>1–7</kbd> upper octave &nbsp;·&nbsp; click waveform to seek, drag to set a loop region
       &nbsp;·&nbsp; <kbd>L</kbd> loop &nbsp;·&nbsp; <kbd>Q</kbd> quiz<span class="ann-only">&nbsp;·&nbsp; drag notes to move in time or pitch, drag a note's right edge to resize, click to select, <kbd>⌫</kbd> to delete</span>
     </div>
@@ -335,7 +328,7 @@ const S = {
   title:'', keyName:'C',
   markers:[],             // {t, d, o}
   audio:null, buffer:null, peaksW:0, duration:0,
-  loop:null, looping:false, quiz:false, mode:'notate', selected:-1,
+  loop:null, looping:false, quiz:false, selected:-1,
   objectUrl:null,
   annFileBytes:null, annFileMime:null, annFileName:null, annScratchId:null
 };
@@ -354,7 +347,6 @@ const playhead=$('playhead'), loopRegion=$('loopRegion'), markerLines=$('markerL
 const rollKeys=$('rollKeys'), rollBg=$('rollBg'), rollNotes=$('rollNotes'), rollPlayhead=$('rollPlayhead'), rollWrap=$('rollWrap');
 const playBtn=$('playBtn'), timecode=$('timecode'), speedSelect=$('speedSelect');
 const loopBtn=$('loopBtn'), clearLoopBtn=$('clearLoopBtn'), quizBtn=$('quizBtn');
-const modeNotate=$('modeNotate'), modeListen=$('modeListen');
 const keyboardEl=$('keyboard'), kbdKeyLabel=$('kbdKeyLabel');
 const tabClipper=$('tabClipper'), clipperPanel=$('clipperPanel'), sharedBelow=$('sharedBelow');
 const clipFileInput=$('clipFileInput'), clipFileName=$('clipFileName');
@@ -1021,16 +1013,8 @@ function toggleQuiz(){
   S.quiz=!S.quiz;
   quizBtn.classList.toggle('on',S.quiz);
   document.body.classList.toggle('quiz',S.quiz);
-  if(S.quiz) S.mode='listen';
-  setModeButtons();
   renderMarkers();
   drawWave(); // waveWrap width changes when the roll's key column collapses
-}
-modeNotate.addEventListener('click',()=>{ S.mode='notate'; if(S.quiz) toggleQuiz(); else setModeButtons(); });
-modeListen.addEventListener('click',()=>{ S.mode='listen'; setModeButtons(); });
-function setModeButtons(){
-  modeNotate.classList.toggle('on',S.mode==='notate');
-  modeListen.classList.toggle('on',S.mode==='listen');
 }
 
 document.addEventListener('keydown',e=>{
@@ -1053,7 +1037,7 @@ document.addEventListener('keydown',e=>{
     if(e.repeat) return;
     const d=parseInt(m[1],10), o=e.shiftKey?1:0;
     playDegree(d,o);
-    if(S.editable&&S.mode==='notate'&&!S.quiz&&S.duration){
+    if(S.editable&&!S.quiz&&S.duration){
       const mk={t:S.audio?S.audio.currentTime:0,d,o,len:DEFAULT_LEN};
       S.markers.push(mk);
       recActive[e.code]=mk;
@@ -1081,7 +1065,6 @@ window.addEventListener('resize',()=>{ drawWave(); renderMarkers(); drawClipWave
 
 /* ============================== init ============================== */
 buildKeyboard();
-setModeButtons();
 loadManifest();
 </script>
 </body>
