@@ -996,7 +996,7 @@ function applyTrackVol(){
   trackVol.parentElement.classList.toggle('muted',+trackVol.value===0);
 }
 function applyNotesVol(){
-  if(notesGain) notesGain.gain.value=volCurve(+notesVol.value);
+  if(notesGain) notesGain.gain.value=2*volCurve(+notesVol.value); // 2x boost to match track level
   notesVol.parentElement.classList.toggle('muted',+notesVol.value===0);
 }
 trackVol.addEventListener('input',applyTrackVol);
