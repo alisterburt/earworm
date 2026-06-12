@@ -62,15 +62,17 @@
 
   /* ---------- player ---------- */
   .wavepanel{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:14px;margin-top:10px}
-  .player-title{display:flex;align-items:baseline;gap:10px;margin-bottom:10px;flex-wrap:wrap}
+  .player-title{display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap}
+  .player-title #quizBtn{margin-left:auto}
   #nowPlaying{font-family:var(--mono);font-size:14px;color:var(--text)}
   #nowKey{font-family:var(--mono);font-size:12px;color:var(--amber)}
   .empty-hint{color:var(--dim);font-size:14px;padding:48px 16px;text-align:center;line-height:1.7}
   .empty-hint b{color:var(--text)}
 
-  .rollgrid{display:grid;grid-template-columns:64px 1fr;column-gap:8px;row-gap:6px;margin-bottom:4px}
-  #rollKeys,#rollWrap{height:224px}
-  #rollKeys{position:relative}
+  .rollgrid{display:grid;grid-template-columns:64px 1fr;column-gap:8px;row-gap:6px;margin-bottom:4px;
+    position:relative;transition:grid-template-columns .25s ease,column-gap .25s ease}
+  #rollKeys,#rollWrap{height:224px;transition:height .25s ease}
+  #rollKeys{position:relative;overflow:hidden}
   .rollkey{position:absolute;left:0;right:0;height:15px;display:flex;align-items:center;gap:5px;
     padding:0 5px;border-radius:3px;font-family:var(--mono);font-size:9px;cursor:pointer;user-select:none;
     background:var(--panel);color:var(--dim)}
@@ -88,11 +90,14 @@
   .rollnote.sel{outline:2px solid var(--text);outline-offset:1px}
   .rollnote .nresize{position:absolute;right:0;top:0;bottom:0;width:7px;cursor:ew-resize}
   .quiz .rollnote{background:#3a4254 !important;color:var(--dim)}
-  /* quiz: collapse the roll to a flat lane so pitch can't be read off note height */
-  .quiz #rollKeys,.quiz .gpad{display:none}
-  .quiz .rollgrid{grid-template-columns:1fr}
-  .quiz #rollWrap{height:26px}
+  /* flatroll: the roll is a flat lane — always in quiz (so pitch can't be read off note
+     height), and as the compact default when notes are shown; heights are set from JS */
+  .flatroll .rollgrid{grid-template-columns:0px 1fr;column-gap:0}
   .quiz #notesVolBox{display:none}
+  #rollToggle{position:absolute;top:3px;left:3px;z-index:6;background:rgba(24,29,38,.85);
+    border:1px solid var(--line);border-radius:4px;padding:1px 7px;font-size:10px;color:var(--dim)}
+  #rollToggle:hover{color:var(--text)}
+  .quiz #rollToggle,.editable #rollToggle{display:none}
   #rollPlayhead{position:absolute;top:0;bottom:0;width:1.5px;background:var(--amber);opacity:.55;pointer-events:none}
 
   #waveWrap{position:relative;height:140px;border-radius:6px;overflow:hidden;background:#10141a;
@@ -245,6 +250,7 @@
   <div id="waveArea" style="display:none">
     <div class="player-title">
       <span id="nowPlaying"></span><span id="nowKey"></span>
+      <button id="quizBtn" title="Reveal the notes on the roll and keyboard">Show Notes</button>
     </div>
     <div class="rollgrid">
       <div id="rollKeys"></div>
@@ -252,6 +258,7 @@
         <div id="rollBg"></div>
         <div id="rollNotes"></div>
         <div id="rollPlayhead"></div>
+        <button id="rollToggle" title="Expand the piano roll">▸ expand</button>
       </div>
       <div class="gpad"></div>
       <div id="waveWrap">
@@ -281,8 +288,6 @@
       </span>
       <button id="loopBtn" title="Loop the selected region (drag on waveform to select)">Loop</button>
       <button id="clearLoopBtn" title="Clear loop region">✕ region</button>
-      <span class="spacer"></span>
-      <button id="quizBtn" title="Reveal the notes on the roll and keyboard">Show Notes</button>
     </div>
     <div class="hints">
       <kbd>space</kbd> play / pause &nbsp;·&nbsp; <b>track</b> / <b>notes</b> sliders mix the recording with the scale-degree synth (click a label to mute)
@@ -333,6 +338,7 @@ const S = {
   markers:[],             // {t, d, o}
   audio:null, buffer:null, peaksW:0, duration:0,
   loop:null, looping:false, quiz:false, selected:-1,
+  rollExpanded:false, rollLo:0, rollHi:13,   // expanded roll shows only the melody's rows ±2
   objectUrl:null,
   annFileBytes:null, annFileMime:null, annFileName:null, annScratchId:null
 };
@@ -348,7 +354,7 @@ const emptyHint=$('emptyHint'), waveArea=$('waveArea'), playerPanel=$('playerPan
 const nowPlaying=$('nowPlaying'), nowKey=$('nowKey');
 const waveWrap=$('waveWrap'), waveBase=$('waveBase'), waveLit=$('waveLit'), progressClip=$('progressClip');
 const playhead=$('playhead'), loopRegion=$('loopRegion'), markerLines=$('markerLines');
-const rollKeys=$('rollKeys'), rollBg=$('rollBg'), rollNotes=$('rollNotes'), rollPlayhead=$('rollPlayhead'), rollWrap=$('rollWrap');
+const rollKeys=$('rollKeys'), rollBg=$('rollBg'), rollNotes=$('rollNotes'), rollPlayhead=$('rollPlayhead'), rollWrap=$('rollWrap'), rollToggle=$('rollToggle');
 const playBtn=$('playBtn'), timecode=$('timecode'), speedSelect=$('speedSelect');
 const loopBtn=$('loopBtn'), clearLoopBtn=$('clearLoopBtn'), quizBtn=$('quizBtn');
 const keyboardEl=$('keyboard'), kbdKeyLabel=$('kbdKeyLabel');
@@ -495,14 +501,35 @@ function fmtTime(t){
 }
 // row 0 = degree 1 octave 0 (bottom), row 13 = degree 7 octave 1 (top)
 function rowOf(mk){ return mk.o*7+(mk.d-1); }
-function rowTop(row){ return (ROLL_ROWS-1-row)*ROW_H; }
+function rowTop(row){ return (S.rollHi-row)*ROW_H; }
+const FLAT_ROLL_H=26;
+
+// flat = single 26px lane; expanded = pitch rows, clamped to the melody's range ±2.
+// The annotater always gets the full expanded roll so any pitch can be reached by drag.
+function rollIsFlat(){ return S.quiz||(!S.editable&&!S.rollExpanded); }
+function updateRollLayout(){
+  const flat=rollIsFlat();
+  document.body.classList.toggle('flatroll',flat);
+  let lo=0, hi=ROLL_ROWS-1;
+  if(!S.editable&&S.markers.length){
+    const rows=S.markers.map(rowOf);
+    lo=Math.max(0,Math.min(...rows)-2);
+    hi=Math.min(ROLL_ROWS-1,Math.max(...rows)+2);
+  }
+  S.rollLo=lo; S.rollHi=hi;
+  const h=flat?FLAT_ROLL_H:(hi-lo+1)*ROW_H;
+  rollWrap.style.height=h+'px'; rollKeys.style.height=h+'px';
+  rollToggle.textContent=S.rollExpanded?'▾ collapse':'▸ expand';
+  rollToggle.title=S.rollExpanded?'Collapse the piano roll to a single lane':'Expand the piano roll';
+  return flat;
+}
 
 function buildRollKeys(){
   rollKeys.innerHTML=''; rollBg.innerHTML='';
-  if(S.quiz) return;
+  if(rollIsFlat()) return;
   const pcTonic=KEYS[keyIdxByName(S.keyName)].pc;
   const names=FLAT_KEYS.has(pcTonic)?FLAT_NAMES:SHARP_NAMES;
-  for(let row=0;row<ROLL_ROWS;row++){
+  for(let row=S.rollLo;row<=S.rollHi;row++){
     const d=row%7+1, o=Math.floor(row/7);
     const midi=degreeMidi(d,o);
     const k=document.createElement('div');
@@ -525,6 +552,7 @@ function buildRollKeys(){
 }
 
 function renderMarkers(){
+  const flat=updateRollLayout();
   buildRollKeys();
   rollNotes.innerHTML=''; markerLines.innerHTML='';
   if(!S.duration) return;
@@ -533,7 +561,7 @@ function renderMarkers(){
     el.className='rollnote'+(i===S.selected?' sel':'');
     el.style.left=(mk.t/S.duration*100)+'%';
     el.style.width=(Math.max(0.06,mk.len||DEFAULT_LEN)/S.duration*100)+'%';
-    el.style.top=S.quiz?'6px':(rowTop(rowOf(mk))+1)+'px';
+    el.style.top=flat?'6px':(rowTop(rowOf(mk))+1)+'px';
     el.style.background=DEG_COLORS[mk.d-1];
     el.innerHTML='<span class="nlabel">'+(S.quiz?'?':mk.d+(mk.o?'<span class="oct">′</span>':''))+'</span>'+
       (S.editable?'<span class="nresize"></span>':'');
@@ -1015,6 +1043,7 @@ quizBtn.addEventListener('click',toggleQuiz);
 // degrees are hidden by default so you test your ear first; the button reveals the answers
 function setQuiz(on){
   S.quiz=on;
+  if(on) S.rollExpanded=false; // revealing always starts from the compact lane
   document.body.classList.toggle('quiz',on);
   quizBtn.textContent=on?'Show Notes':'Hide Notes';
   quizBtn.title=on?'Reveal the notes on the roll and keyboard':'Hide the notes to test your ear';
@@ -1024,6 +1053,13 @@ function toggleQuiz(){
   renderMarkers();
   drawWave(); // waveWrap width changes when the roll's key column collapses
 }
+rollToggle.addEventListener('click',()=>{
+  S.rollExpanded=!S.rollExpanded;
+  renderMarkers();
+  drawWave(); // correct immediately when transitions are off (reduced motion)
+});
+// the gutter/height transition resizes waveWrap; redraw the waveform at its settled width
+rollWrap.addEventListener('transitionend',e=>{ if(e.propertyName==='height') drawWave(); });
 
 document.addEventListener('keydown',e=>{
   const tag=(e.target.tagName||'').toLowerCase();
