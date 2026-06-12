@@ -450,6 +450,7 @@ function decorateKeyboard(){
   }
 }
 function flashKey(m){
+  if(S.quiz) return; // don't reveal pitches during a quiz
   const el=keyEls[m]; if(!el) return;
   el.classList.add('playing');
   setTimeout(()=>el.classList.remove('playing'),220);
