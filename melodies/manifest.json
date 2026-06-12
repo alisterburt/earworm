@@ -1,6 +1,12 @@
 {
   "melodies": [
     {
+      "file": "billie-eilish-birds-of-a-feather.melody.json",
+      "title": "Billie Eilish - BIRDS OF A FEATHER",
+      "key": "D",
+      "notes": 32
+    },
+    {
       "file": "fred-again-kyle-i-found-you.melody.json",
       "title": "Fred Again.. - Kyle (i found you)",
       "key": "E♭",
