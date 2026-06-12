@@ -88,6 +88,7 @@
   .quiz #rollKeys,.quiz .gpad{display:none}
   .quiz .rollgrid{grid-template-columns:1fr}
   .quiz #rollWrap{height:26px}
+  .quiz #notesVolBox{display:none}
   #rollPlayhead{position:absolute;top:0;bottom:0;width:1.5px;background:var(--amber);opacity:.55;pointer-events:none}
 
   #waveWrap{position:relative;height:140px;border-radius:6px;overflow:hidden;background:#10141a;
@@ -271,7 +272,7 @@
         <span class="vlabel" id="trackVolLabel">track</span>
         <input type="range" id="trackVol" min="0" max="100" value="100">
       </span>
-      <span class="vol muted" title="Scale-degree synth volume during playback — click the label to mute">
+      <span class="vol muted" id="notesVolBox" title="Scale-degree synth volume during playback — click the label to mute">
         <span class="vlabel" id="notesVolLabel">notes</span>
         <input type="range" id="notesVol" min="0" max="100" value="0">
       </span>
@@ -602,7 +603,7 @@ function scheduleRollNotes(t){
   if(prev===null||!S.audio||S.audio.paused) return;
   const rate=S.audio.playbackRate||1;
   if(t<=prev||t-prev>0.3*rate) return; // backwards or a seek/loop jump — don't replay the gap
-  if(+notesVol.value===0) return;
+  if(S.quiz||+notesVol.value===0) return; // quiz: the synth would give the pitches away
   for(const mk of S.markers){
     if(mk.t>=prev&&mk.t<t)
       playMidi(degreeMidi(mk.d,mk.o),Math.max(0.18,(mk.len||DEFAULT_LEN)/rate),notesGain);
