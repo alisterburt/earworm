@@ -272,9 +272,9 @@
         <span class="vlabel" id="trackVolLabel">track</span>
         <input type="range" id="trackVol" min="0" max="100" value="100">
       </span>
-      <span class="vol muted" id="notesVolBox" title="Scale-degree synth volume during playback — click the label to mute">
+      <span class="vol" id="notesVolBox" title="Scale-degree synth volume during playback — click the label to mute">
         <span class="vlabel" id="notesVolLabel">notes</span>
-        <input type="range" id="notesVol" min="0" max="100" value="0">
+        <input type="range" id="notesVol" min="0" max="100" value="100">
       </span>
       <button id="loopBtn" title="Loop the selected region (drag on waveform to select)">Loop</button>
       <button id="clearLoopBtn" title="Clear loop region">✕ region</button>
@@ -1001,7 +1001,7 @@ function muteToggle(slider,apply,fallback){
   apply();
 }
 $('trackVolLabel').addEventListener('click',()=>muteToggle(trackVol,applyTrackVol,100));
-$('notesVolLabel').addEventListener('click',()=>muteToggle(notesVol,applyNotesVol,80));
+$('notesVolLabel').addEventListener('click',()=>muteToggle(notesVol,applyNotesVol,100));
 playBtn.addEventListener('click',togglePlay);
 speedSelect.addEventListener('change',()=>{ if(S.audio){ S.audio.playbackRate=parseFloat(speedSelect.value); S.audio.preservesPitch=true; } });
 loopBtn.addEventListener('click',()=>{
