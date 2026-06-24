@@ -6,12 +6,14 @@ import json
 from pathlib import Path
 
 import librosa
+import numpy as np
 
 from . import audio as audio_stage
 from . import beats as beats_stage
 from . import chords as chords_stage
 from . import key as key_stage
 from . import lyrics as lyrics_stage
+from . import midi_process
 from . import stems as stems_stage
 from . import transcribe as transcribe_stage
 from .render import render_song
@@ -45,6 +47,8 @@ def process(
     # Load the master mono once for the analysis stages.
     y, sr = librosa.load(str(master), sr=None, mono=True)
     duration = float(len(y) / sr)
+    # Mix loudness reference (95th-pct RMS) for the mix-relative MIDI volume gate.
+    master_ref_rms = float(np.percentile(librosa.feature.rms(y=y)[0], 95))
 
     # 2. Harmonic + rhythmic analysis on the full mix.
     log("analyzing chords (Chordino / nnls-chroma)")
@@ -73,8 +77,18 @@ def process(
         if name in MELODIC_STEMS or (name == "drums" and drums_midi):
             midi = transcribe_stage.transcribe_stem(song_dir / rel_wav, song_dir / "midi")
             if midi is not None:
+                raw = transcribe_stage.parse_notes(midi)
                 entry["midi"] = str(midi.relative_to(song_dir))
-                entry["notes"] = transcribe_stage.parse_notes(midi)
+                entry["notes"] = raw  # raw transcription, always preserved
+                # Cleaned variant: volume-gate, drop pitch outliers, quantize.
+                clean = midi_process.process_notes(
+                    raw, song_dir / rel_wav, beat_info["beats"],
+                    master_ref_rms=master_ref_rms,
+                )
+                entry["notes_clean"] = clean
+                clean_mid = song_dir / "midi" / f"{name}.clean.mid"
+                transcribe_stage.notes_to_midi(clean, clean_mid)
+                entry["midi_clean"] = str(clean_mid.relative_to(song_dir))
         stems_out[name] = entry
 
     # 4. Lyrics: transcribe the (clean) vocal stem with whisper.

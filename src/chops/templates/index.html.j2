@@ -107,6 +107,7 @@
     <span>time <b id="m-time">0:00</b> / <span id="m-dur">0:00</span></span>
   </div>
   <div class="spacer"></div>
+  <button class="toggle" id="btn-midi" title="Toggle between cleaned and raw transcribed MIDI">MIDI: clean</button>
   <button class="toggle" id="btn-roman" title="Toggle chord labels between absolute names and Roman numerals">Roman</button>
   <button class="play" id="btn-play">▶ Play</button>
   <div class="ctlgroup">speed <select id="speed"></select></div>
@@ -218,7 +219,12 @@ const Engine = {
 };
 
 // ---- view state ----
-let PPS = 0, FIT = 0, MAXPPS = 0, chordMode = "label", selStem = null, syncing = false;
+let PPS = 0, FIT = 0, MAXPPS = 0, chordMode = "label", midiMode = "clean", selStem = null, syncing = false;
+// notes for a stem in the current MIDI mode (falls back to raw if no cleaned set)
+const midiNotes = name => {
+  const s = DATA.stems[name];
+  return (midiMode === "clean" && s.notes_clean) ? s.notes_clean : (s.notes || []);
+};
 const scrollEl = document.getElementById("scroll");
 const contentEl = document.getElementById("content");
 const labelsEl = document.getElementById("labels");
@@ -289,7 +295,7 @@ function drawStem(c, name, color) {
   const ctx = c.getContext("2d"); ctx.clearRect(0,0,c.width,c.height);
   drawGrid(ctx, c.height);
   paintWave(ctx, c.width, c.height, Engine.envs[name], color, 0.22);
-  const notes = DATA.stems[name].notes;
+  const notes = midiNotes(name);
   if (notes && notes.length) { const [lo,hi] = noteRange(notes); paintRoll(ctx, c.width, c.height, notes, color, lo, hi); }
 }
 
@@ -436,7 +442,7 @@ function drawPianoRoll() {
   const kctx = prKeys.getContext("2d"), pctx = prCanvas.getContext("2d");
   kctx.clearRect(0,0,60,h); pctx.clearRect(0,0,w,h);
   if (!selStem) return;
-  const notes = DATA.stems[selStem].notes || [];
+  const notes = midiNotes(selStem);
   const color = STEM_COLORS[selStem] || "#9aa3b2";
   const [lo, hi] = noteRange(notes), span = Math.max(1, hi - lo), rowH = h / span;
 
@@ -548,6 +554,12 @@ async function main() {
     chordMode = chordMode === "roman" ? "label" : "roman";
     e.currentTarget.classList.toggle("on", chordMode === "roman");
     buildChords();
+  };
+  document.getElementById("btn-midi").onclick = (e) => {
+    midiMode = midiMode === "clean" ? "raw" : "clean";
+    e.currentTarget.textContent = "MIDI: " + midiMode;
+    e.currentTarget.classList.toggle("on", midiMode === "raw");
+    layout();  // redraws stem lanes + piano roll with the selected note set
   };
   document.getElementById("zoom").oninput = () => { setupZoom(); layout(); };
   scrollEl.addEventListener("scroll", () => {

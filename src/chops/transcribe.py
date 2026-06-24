@@ -42,6 +42,21 @@ def transcribe_stem(stem_wav: Path, midi_dir: Path) -> Path | None:
     return final
 
 
+def notes_to_midi(notes: list[dict], path: Path) -> None:
+    """Write a flat note list back out as a single-instrument MIDI file."""
+    pm = pretty_midi.PrettyMIDI()
+    inst = pretty_midi.Instrument(program=0)
+    for n in notes:
+        inst.notes.append(
+            pretty_midi.Note(
+                velocity=int(n["vel"]), pitch=int(n["pitch"]),
+                start=float(n["s"]), end=float(n["e"]),
+            )
+        )
+    pm.instruments.append(inst)
+    pm.write(str(path))
+
+
 def parse_notes(midi_path: Path) -> list[dict]:
     """Flatten a MIDI file to a list of {s, e, pitch, vel} notes."""
     pm = pretty_midi.PrettyMIDI(str(midi_path))

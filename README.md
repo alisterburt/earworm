@@ -12,6 +12,7 @@ through WebAudio so you get real per-stem **solo / mute**.
 |--------------------|--------------------------------------------------------------|-------------------------------------|
 | Stem separation    | [demucs](https://github.com/adefossez/demucs) (htdemucs)     | `uvx demucs` (isolated)             |
 | MIDI transcription | [basic-pitch](https://github.com/spotify/basic-pitch)        | `uvx --python 3.11 basic-pitch[onnx]` (isolated) |
+| MIDI cleanup       | volume-gate + pitch-outlier removal + 16th-note quantize     | in-process (raw kept alongside)     |
 | Beats / tempo      | [beat_this](https://github.com/CPJKU/beat_this) (ISMIR 2024) | `uv run --script` PEP 723 (isolated torch) |
 | Chords             | [Chordino](https://www.isophonics.net/nnls-chroma) (nnls-chroma Vamp plugin) | `vamp` bindings, in-process |
 | Key                | chord-based estimate (chroma + Krumhansl-Schmuckler fallback) | in-process                         |
@@ -36,7 +37,8 @@ uv run chops serve out                            # serve over HTTP (required fo
 out/<song>/
   master.m4a            mix, AAC (player + mix waveform)
   stems/*.m4a           demucs stems, AAC (analysis WAVs are transcoded + removed)
-  midi/*.mid            basic-pitch transcriptions (melodic stems)
+  midi/*.mid            raw basic-pitch transcriptions (melodic stems)
+  midi/*.clean.mid      cleaned MIDI (gated, de-spiked, quantized to 16ths)
   analysis.json         complete analysis: tempo, key, beats, downbeats,
                         chords (+ Roman numerals), lyrics, per-stem MIDI notes
   index.html            the viewer (analysis.json embedded verbatim, not fetched)
