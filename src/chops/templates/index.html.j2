@@ -155,7 +155,7 @@ const Engine = {
     this.ctx = new (window.AudioContext || window.webkitAudioContext)();
     const names = Object.keys(DATA.stems);
     for (const n of names) {
-      const el = new Audio(DATA.stems[n].wav);
+      const el = new Audio(DATA.stems[n].audio);
       el.preload = "auto"; el.crossOrigin = "anonymous";
       el.preservesPitch = true; el.mozPreservesPitch = true; el.webkitPreservesPitch = true;
       this.els[n] = el;
@@ -166,7 +166,7 @@ const Engine = {
   // calling onReady(name) as each finishes so its lane can redraw progressively.
   async decodeWaveforms(onReady) {
     const jobs = Object.keys(DATA.stems).map(async n => {
-      const buf = await this._decode(DATA.stems[n].wav);
+      const buf = await this._decode(DATA.stems[n].audio);
       if (buf) { this.envs[n] = peaks(buf.getChannelData(0), ENVW); onReady(n); }
     });
     jobs.push((async () => {

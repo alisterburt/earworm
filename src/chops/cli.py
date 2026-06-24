@@ -29,10 +29,17 @@ def process(
     whisper_model: str = typer.Option(
         DEFAULT_MODEL, help="faster-whisper model (e.g. base, small, medium, large-v3)."
     ),
+    transcode: bool = typer.Option(
+        True, "--transcode/--no-transcode", help="Transcode stems/mix to AAC m4a for the viewer."
+    ),
+    keep_wav: bool = typer.Option(
+        False, "--keep-wav", help="Keep the source WAVs after transcoding."
+    ),
 ) -> None:
     """Run the full pipeline on AUDIO and build the viewer."""
     song_dir = process_song(
-        audio, out, drums_midi=drums_midi, lyrics=lyrics, whisper_model=whisper_model
+        audio, out, drums_midi=drums_midi, lyrics=lyrics, whisper_model=whisper_model,
+        transcode=transcode, keep_wav=keep_wav,
     )
     typer.echo(str(song_dir / "index.html"))
 

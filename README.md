@@ -34,13 +34,17 @@ uv run chops serve out                            # serve over HTTP (required fo
 
 ```
 out/<song>/
-  master.wav            decoded mix (player + mix waveform)
-  stems/*.wav           demucs stems
+  master.m4a            mix, AAC (player + mix waveform)
+  stems/*.m4a           demucs stems, AAC (analysis WAVs are transcoded + removed)
   midi/*.mid            basic-pitch transcriptions (melodic stems)
   analysis.json         complete analysis: tempo, key, beats, downbeats,
                         chords (+ Roman numerals), lyrics, per-stem MIDI notes
   index.html            the viewer (analysis.json embedded verbatim, not fetched)
 ```
+
+Analysis runs on lossless WAVs, which are then transcoded to compact AAC/m4a
+for the viewer (~10x smaller; a 6-min song's folder is ~30 MB instead of
+~300 MB). Use `--keep-wav` to retain the WAVs, or `--no-transcode` to skip it.
 
 `analysis.json` is the single source of truth — every stage (key, chords +
 Roman numerals, beats, MIDI, lyrics) is computed in the pipeline and stored
@@ -49,7 +53,8 @@ there, then embedded into `index.html` so the page's data is self-contained
 
 Options: `--out <dir>` (default `out/`), `--drums-midi` (also transcribe drums),
 `--no-lyrics` (skip whisper), `--whisper-model <name>` (default `small`; use
-`medium`/`large-v3` for better sung-lyric accuracy).
+`medium`/`large-v3` for better sung-lyric accuracy), `--keep-wav`,
+`--no-transcode`.
 `uv run chops render out/<song>` re-renders `index.html` from `analysis.json`.
 
 > The viewer loads the audio with `fetch()`, which browsers block over

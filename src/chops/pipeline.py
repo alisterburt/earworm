@@ -7,6 +7,7 @@ from pathlib import Path
 
 import librosa
 
+from . import audio as audio_stage
 from . import beats as beats_stage
 from . import chords as chords_stage
 from . import key as key_stage
@@ -27,6 +28,8 @@ def process(
     drums_midi: bool = False,
     lyrics: bool = True,
     whisper_model: str = lyrics_stage.DEFAULT_MODEL,
+    transcode: bool = True,
+    keep_wav: bool = False,
 ) -> Path:
     audio_path = audio_path.expanduser().resolve()
     if not audio_path.exists():
@@ -66,7 +69,7 @@ def process(
     stems_out: dict[str, dict] = {}
     for name in ordered:
         rel_wav = stem_paths[name]
-        entry: dict = {"wav": rel_wav}
+        entry: dict = {}
         if name in MELODIC_STEMS or (name == "drums" and drums_midi):
             midi = transcribe_stage.transcribe_stem(song_dir / rel_wav, song_dir / "midi")
             if midi is not None:
@@ -84,10 +87,26 @@ def process(
         )
         work.unlink(missing_ok=True)
 
-    # 5. Assemble manifest.
+    # 5. Transcode the analysis WAVs to compact m4a for the viewer (all stages
+    # above ran on the WAVs). Each stem entry gets an "audio" path.
+    if transcode and audio_stage.ffmpeg_available():
+        log("transcoding audio to AAC/m4a")
+        audio_rel = audio_stage.transcode(master, song_dir, audio_stage.MASTER_BITRATE, keep_wav)
+        for name in ordered:
+            stems_out[name]["audio"] = audio_stage.transcode(
+                song_dir / stem_paths[name], song_dir, audio_stage.STEM_BITRATE, keep_wav
+            )
+    else:
+        if transcode:
+            log("ffmpeg not found; keeping WAV audio for the viewer")
+        audio_rel = master.name
+        for name in ordered:
+            stems_out[name]["audio"] = stem_paths[name]
+
+    # 6. Assemble manifest.
     manifest = {
         "name": audio_path.stem,
-        "audio": master.name,
+        "audio": audio_rel,
         "duration": round(duration, 3),
         "sample_rate": sr,
         "tempo": beat_info["tempo"],
@@ -102,7 +121,7 @@ def process(
     analysis_path.write_text(json.dumps(manifest, indent=2))
     log(f"wrote {analysis_path}")
 
-    # 6. Render the viewer.
+    # 7. Render the viewer.
     render_song(song_dir)
     log(f"=== done: open {song_dir / 'index.html'} ===")
     return song_dir
