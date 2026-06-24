@@ -1,0 +1,12 @@
+# inputs and generated outputs (large audio / per-song artifacts)
+examples/
+out/
+separated/
+
+# python / uv
+.venv/
+__pycache__/
+*.pyc
+
+# macOS
+.DS_Store
