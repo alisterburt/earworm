@@ -1,21 +1,20 @@
 [project]
 name = "chops"
 version = "0.1.0"
-description = "Audio -> stems -> MIDI + harmonic analysis -> Logic-like HTML viewer"
+description = "Logic Pro project -> stems + MIDI + harmonic analysis -> web workstation"
 readme = "README.md"
 authors = [
     { name = "Alister Burt", email = "alisterburt@gmail.com" }
 ]
 requires-python = ">=3.13"
 dependencies = [
-    "jinja2>=3.1.6",
     "librosa>=0.11.0",
     "numpy>=2.4.6",
+    "pillow>=12.2.0",
     "pretty-midi>=0.2.11",
     "scipy>=1.18.0",
     "soundfile>=0.14.0",
     "typer>=0.26.7",
-    "vamp>=1.1.0",
 ]
 
 [project.scripts]
@@ -25,10 +24,5 @@ chops = "chops.cli:main"
 requires = ["uv_build>=0.9.22,<0.10.0"]
 build-backend = "uv_build"
 
-# The `vamp` bindings import numpy in their setup.py but don't declare it as a
-# build dependency. Inject it so the isolated build can resolve.
 [tool.uv]
 preview = true
-
-[tool.uv.extra-build-dependencies]
-vamp = ["numpy"]

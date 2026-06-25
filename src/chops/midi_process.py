@@ -20,12 +20,19 @@ import librosa
 import numpy as np
 
 
+# harmonic intervals (semitones above a fundamental) where basic-pitch tends to
+# hallucinate overtone "ghost" notes on monophonic sources
+_OVERTONE_INTERVALS = {7, 12, 19, 24, 28, 31}
+
+
 def process_notes(
     notes: list[dict],
     stem_wav: Path,
     beats: list[float],
     *,
     master_ref_rms: float | None = None,
+    monophonic: bool = False,
+    pitch_range: tuple[int, int] | None = None,
     gate_drop_db: float = 35.0,
     mix_drop_db: float = 45.0,
     outlier_iqr: float = 2.0,
@@ -38,9 +45,50 @@ def process_notes(
         notes, y, sr, drop_db=gate_drop_db,
         master_ref_rms=master_ref_rms, mix_drop_db=mix_drop_db,
     )
+    if pitch_range:
+        lo, hi = pitch_range
+        notes = [n for n in notes if lo <= n["pitch"] <= hi]
+    if monophonic:
+        notes = _remove_overtones(notes)
     notes = _remove_pitch_outliers(notes, k=outlier_iqr)
     notes = _quantize(notes, beats, subdiv=subdiv)
     return notes
+
+
+# plausible instrument ranges (MIDI) — gross out-of-range notes are transcription errors
+PITCH_RANGES = {
+    "vocals": (45, 84),  # A2 .. C6
+    "bass": (28, 60),    # E1 .. C4
+}
+
+
+def _remove_overtones(notes: list[dict]) -> list[dict]:
+    """On a monophonic stem, drop the higher note of any overlapping pair sitting
+    a harmonic interval (octave/fifth/…) above a louder-or-equal lower note —
+    these are spurious overtones, not a real second voice.
+    """
+    order = sorted(range(len(notes)), key=lambda i: notes[i]["s"])
+    drop = set()
+    for ai in range(len(order)):
+        i = order[ai]
+        if i in drop:
+            continue
+        a = notes[i]
+        for bj in range(ai + 1, len(order)):
+            j = order[bj]
+            if j in drop:
+                continue
+            b = notes[j]
+            if b["s"] >= a["e"]:
+                break  # sorted by start; no later note overlaps a
+            overlap = min(a["e"], b["e"]) - max(a["s"], b["s"])
+            if overlap < 0.04:
+                continue
+            hi_idx, lo = (j, a) if b["pitch"] > a["pitch"] else (i, b)
+            hi = notes[hi_idx]
+            if (hi["pitch"] - lo["pitch"]) in _OVERTONE_INTERVALS and hi["vel"] <= lo["vel"] + 10:
+                drop.add(hi_idx)
+    return [n for k, n in enumerate(notes) if k not in drop]
 
 
 def _gate_by_volume(

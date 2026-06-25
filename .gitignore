@@ -2,6 +2,11 @@
 examples/
 out/
 separated/
+web/public/content/
+
+# web app
+web/node_modules/
+web/dist/
 
 # python / uv
 .venv/

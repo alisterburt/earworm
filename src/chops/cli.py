@@ -6,20 +6,21 @@ from pathlib import Path
 
 import typer
 
+from .library import build_library
 from .lyrics import DEFAULT_MODEL
+from .pipeline import DEFAULT_CONTENT
 from .pipeline import process as process_song
-from .render import render_song
 
 app = typer.Typer(
     add_completion=False,
-    help="Audio -> stems -> MIDI + harmonic analysis -> Logic-like HTML viewer.",
+    help="Audio -> stems -> MIDI/harmonic/lyric analysis -> web app content.",
 )
 
 
 @app.command()
 def process(
-    audio: Path = typer.Argument(..., help="Input audio file (mp3, wav, ...)."),
-    out: Path = typer.Option(Path("out"), help="Output root directory."),
+    project: Path = typer.Argument(..., help="Logic Pro project folder (contains a .logicx)."),
+    out: Path = typer.Option(DEFAULT_CONTENT, help="Content output root (served by the web app)."),
     drums_midi: bool = typer.Option(
         False, "--drums-midi", help="Also transcribe the drum stem to MIDI."
     ),
@@ -35,42 +36,27 @@ def process(
     keep_wav: bool = typer.Option(
         False, "--keep-wav", help="Keep the source WAVs after transcoding."
     ),
+    sections: bool = typer.Option(
+        True, "--sections/--no-sections", help="Detect song sections (Claude)."
+    ),
+    motifs: bool = typer.Option(
+        True, "--motifs/--no-motifs", help="Detect motifs to learn (Claude)."
+    ),
 ) -> None:
-    """Run the full pipeline on AUDIO and build the viewer."""
+    """Run the full pipeline on a Logic PROJECT folder and write its content assets."""
     song_dir = process_song(
-        audio, out, drums_midi=drums_midi, lyrics=lyrics, whisper_model=whisper_model,
-        transcode=transcode, keep_wav=keep_wav,
+        project, out, drums_midi=drums_midi, lyrics=lyrics, whisper_model=whisper_model,
+        transcode=transcode, keep_wav=keep_wav, sections=sections, motifs=motifs,
     )
-    typer.echo(str(song_dir / "index.html"))
+    typer.echo(str(song_dir))
 
 
 @app.command()
-def render(
-    song_dir: Path = typer.Argument(..., help="A song dir containing analysis.json."),
+def library(
+    content: Path = typer.Option(DEFAULT_CONTENT, help="Content root to index."),
 ) -> None:
-    """Re-render index.html from an existing analysis.json (no re-analysis)."""
-    out = render_song(song_dir)
-    typer.echo(str(out))
-
-
-@app.command()
-def serve(
-    directory: Path = typer.Argument(Path("out"), help="Directory to serve (the out/ root or a song dir)."),
-    port: int = typer.Option(8000, help="Port to serve on."),
-) -> None:
-    """Serve DIRECTORY over HTTP so the viewer can fetch the audio files.
-
-    Browsers block fetch() over file://, so open the viewer through this server,
-    e.g. http://localhost:8000/<song>/index.html
-    """
-    import functools
-    import http.server
-    import socketserver
-
-    handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(directory))
-    with socketserver.TCPServer(("", port), handler) as httpd:
-        typer.echo(f"Serving {directory} at http://localhost:{port}/  (Ctrl-C to stop)")
-        httpd.serve_forever()
+    """Rebuild library.json from the processed song dirs."""
+    typer.echo(str(build_library(content)))
 
 
 def main() -> None:

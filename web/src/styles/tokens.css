@@ -1,0 +1,41 @@
+:root {
+  /* Sonofield palette — semitone above tonic (0..11) */
+  --sf-0:  #5547f5;  --sf-1:  #bffd6d;  --sf-2:  #e34af7;  --sf-3:  #8bfcb3;
+  --sf-4:  #e85360;  --sf-5:  #71adf9;  --sf-6:  #f8fe6d;  --sf-7:  #9b48f6;
+  --sf-8:  #8efc6d;  --sf-9:  #e74da7;  --sf-10: #8ffcfe;  --sf-11: #f3ac60;
+
+  /* neutral surfaces (refined dark) */
+  --bg:        #0b0c0f;
+  --surface:   #131519;
+  --surface-2: #1a1d23;
+  --surface-3: #23272f;
+  --border:    #2a2f39;
+  --border-strong: #3a414f;
+
+  --text:       #eef1f6;
+  --text-dim:   #9aa3b2;
+  --text-faint: #6b7280;
+
+  --accent: #6a7bff;
+  --accent-contrast: #0b1020;
+  --playhead: #ff5d5d;
+
+  /* radii */
+  --r-sm: 7px; --r-md: 11px; --r-lg: 16px; --r-xl: 24px; --r-pill: 999px;
+
+  /* spacing */
+  --s-1: 4px; --s-2: 8px; --s-3: 12px; --s-4: 16px; --s-5: 24px;
+  --s-6: 32px; --s-7: 48px; --s-8: 64px;
+
+  /* type */
+  --font: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", system-ui, sans-serif;
+  --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+  --t-xs: 11px; --t-sm: 13px; --t-md: 15px; --t-lg: 19px; --t-xl: 26px; --t-2xl: 38px;
+
+  --shadow-1: 0 1px 2px rgba(0,0,0,.4);
+  --shadow-2: 0 8px 30px rgba(0,0,0,.45);
+  --shadow-card: 0 10px 36px rgba(0,0,0,.5);
+
+  --dur: 160ms;
+  --ease: cubic-bezier(.2,.7,.2,1);
+}

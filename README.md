@@ -1,92 +1,99 @@
 # chops
 
-Turn an audio file into a Logic-like web view: a scrollable mix waveform with
-**chords** and a **beat grid** overlaid, the detected **key** and **tempo** in
-the header, and a stack of separated **stems** below — each with its own
-waveform and transcribed **MIDI** piano-roll, all playhead-synced. Stems play
-through WebAudio so you get real per-stem **solo / mute**.
+A music-learning app: point it at a **saved Logic Pro project** and chops pulls
+out the stems and Logic's own tempo/key/beat/chord analysis, transcribes each stem
+to MIDI, and adds structure + motif analysis so you can **understand a song well
+enough to arrange it for any instrument**. A Python pipeline produces the data; a
+Vite + Svelte app (GitHub-Pages hostable) presents it as a single-screen workstation.
+
+Logic's Stem Splitter and its chord/tempo/key detection are higher quality than
+the open-source equivalents, and a saved project already contains all of it — so
+chops reads it straight off disk (the binary chord track is reverse-engineered;
+see `src/chops/logic.py`) rather than recomputing it.
+
+Everything is themed on the **Sonofield** colour system — 12 hues keyed to scale
+degree relative to the tonic, arranged by circle of fifths. MIDI notes are
+coloured by degree, chords by their root.
+
+- **Library** — Apple-Music-style grid (real cover art via iTunes), sorted by added.
+- **Song workstation** — one screen: header transport; section-coloured overview
+  waveform with a section band-strip; a Logic-style scrolling window (fixed
+  playhead, bars, dual roman/absolute chords, lyrics phrase-by-phrase, loop select,
+  2–32 bar zoom) with piano-roll + labelled keyboard; and a side rail of stems
+  (mute / solo / show-in-roll), sections (jump list) and motifs to learn.
+- Pitch-preserving speed, absolute/relative naming toggle, raw/clean MIDI, lyric search.
+
+The app is behind a lightweight (non-secure) client-side password gate. **Password: `bleepbloop`.**
+
+## Input: a Logic project folder
+
+Save a Logic project **as a folder** (with assets) and run Logic's Stem Splitter so
+the stems land in `Audio Files/`. chops reads:
+
+```
+<Artist - Title>/                     # folder name → artist/title + cover lookup
+  Audio Files/
+    *_Bass.wav … _Vocals.wav          # Logic Stem Splitter output (6 stems)
+    *.mamd                            # Smart Tempo beat grid
+    *.mp3                             # full mix (master)
+  *.logicx/Alternatives/000/
+    MetaData.plist                    # tempo, key, time signature
+    ProjectData                       # chord track (decoded by logic.py)
+```
 
 ## Pipeline
 
-| Stage              | Tool                                                          | How it runs                         |
+| Stage              | Source                                                       | How it runs                         |
 |--------------------|--------------------------------------------------------------|-------------------------------------|
-| Stem separation    | [demucs](https://github.com/adefossez/demucs) (htdemucs)     | `uvx demucs` (isolated)             |
+| Stems              | Logic Stem Splitter WAVs                                      | copied from the project             |
+| Tempo / key / sig  | Logic `MetaData.plist`                                        | in-process (`logic.py`)             |
+| Beat grid          | Logic Smart Tempo (`.mamd` → `ResU` JSON)                    | in-process (`logic.py`)             |
+| Chords             | Logic chord track (`ProjectData`, reverse-engineered)        | in-process (`logic.py`)             |
 | MIDI transcription | [basic-pitch](https://github.com/spotify/basic-pitch)        | `uvx --python 3.11 basic-pitch[onnx]` (isolated) |
 | MIDI cleanup       | volume-gate + pitch-outlier removal + 16th-note quantize     | in-process (raw kept alongside)     |
-| Beats / tempo      | [beat_this](https://github.com/CPJKU/beat_this) (ISMIR 2024) | `uv run --script` PEP 723 (isolated torch) |
-| Chords             | [Chordino](https://www.isophonics.net/nnls-chroma) (nnls-chroma Vamp plugin) | `vamp` bindings, in-process |
-| Key                | chord-based estimate (chroma + Krumhansl-Schmuckler fallback) | in-process                         |
-| Roman numerals     | derived from chords + key                                    | in-process                          |
-| Lyrics             | [faster-whisper](https://github.com/SYSTRAN/faster-whisper) on the vocal stem | `uv run --script` PEP 723 (isolated) |
+| Cover + metadata   | iTunes Search API (folder name `Artist - Title`), generated fallback | in-process |
+| Lyrics             | [faster-whisper](https://github.com/SYSTRAN/faster-whisper) transcription (VAD off) + [whisperx](https://github.com/m-bain/whisperX) wav2vec2 forced alignment, snapped to vocal-note onsets | `uv run --script` PEP 723 (isolated) |
+| Sections           | local `claude -p` over bar-by-bar chords + lyrics            | in-process (LLM)                    |
+| Motifs             | programmatic MIDI features + piano-roll images → `claude -p` | in-process (LLM)                    |
 
-The heavy, mutually-incompatible tools (torch / tensorflow / onnx) each run in
-their own ephemeral environment via `uvx` / `uv run --script`, so the main
-`chops` environment stays light.
+The heavy tools (tensorflow / onnx for basic-pitch, faster-whisper) each run in an
+ephemeral environment via `uvx` / `uv run --script`, so the main `chops`
+environment stays light. The LLM stages shell out to the local `claude` CLI (your
+Claude Code login — no API key); Roman numerals are computed in the browser.
 
 ## Usage
 
 ```bash
-uv run chops process "examples/MGMT - Kids.mp3"   # full pipeline -> out/<song>/
-uv run chops serve out                            # serve over HTTP (required for the viewer)
-# open http://localhost:8000/<song>/index.html
+# 1. process a Logic project folder -> content assets (web/public/content/<id>/ + library.json)
+uv run chops process "/path/to/Artist - Title"
+
+# 2. run the app
+cd web && npm install && npm run dev          # http://localhost:5173
 ```
 
-`process` writes a per-song folder:
+`process` writes per-song content the app reads:
 
 ```
-out/<song>/
-  master.m4a            mix, AAC (player + mix waveform)
-  stems/*.m4a           demucs stems, AAC (analysis WAVs are transcoded + removed)
-  midi/*.mid            raw basic-pitch transcriptions (melodic stems)
-  midi/*.clean.mid      cleaned MIDI (gated, de-spiked, quantized to 16ths)
-  analysis.json         complete analysis: tempo, key, beats, downbeats,
-                        chords (+ Roman numerals), lyrics, per-stem MIDI notes
-  index.html            the viewer (analysis.json embedded verbatim, not fetched)
+web/public/content/
+  library.json            songs sorted by added (id, title, artist, cover, key, tempo)
+  <id>/
+    master.m4a  stems/*.m4a        AAC (analysis WAVs transcoded + removed)
+    midi/*.mid  midi/*.clean.mid   raw + cleaned (gated, de-spiked, quantized) MIDI
+    cover.jpg
+    analysis.json                  key, time signature, beats/downbeats, chords,
+                                   lyrics, peaks, per-stem MIDI notes, sections, motifs
 ```
 
-Analysis runs on lossless WAVs, which are then transcoded to compact AAC/m4a
-for the viewer (~10x smaller; a 6-min song's folder is ~30 MB instead of
-~300 MB). Use `--keep-wav` to retain the WAVs, or `--no-transcode` to skip it.
+Analysis runs on lossless WAVs, then transcodes to AAC (~10× smaller). `process`
+options: `--drums-midi`, `--no-lyrics`, `--whisper-model <base|small|medium|large-v3>`,
+`--no-sections`, `--no-motifs`, `--keep-wav`, `--no-transcode`, `--out <dir>`.
+Rebuild just the index with `uv run chops library`.
 
-`analysis.json` is the single source of truth — every stage (key, chords +
-Roman numerals, beats, MIDI, lyrics) is computed in the pipeline and stored
-there, then embedded into `index.html` so the page's data is self-contained
-(only the audio is loaded externally).
-
-Options: `--out <dir>` (default `out/`), `--drums-midi` (also transcribe drums),
-`--no-lyrics` (skip whisper), `--whisper-model <name>` (default `small`; use
-`medium`/`large-v3` for better sung-lyric accuracy), `--keep-wav`,
-`--no-transcode`.
-`uv run chops render out/<song>` re-renders `index.html` from `analysis.json`.
-
-> The viewer loads the audio with `fetch()`, which browsers block over
-> `file://`. Always open it through `chops serve` (or any local HTTP server).
-
-## One-time setup: Chordino Vamp plugin
-
-Chord detection uses the **nnls-chroma** Vamp plugin. The official binaries are
-Intel-only, so on **Apple Silicon** you must compile a native `arm64` build:
+## Deploy (GitHub Pages)
 
 ```bash
-brew install vamp-plugin-sdk boost
-git clone https://github.com/c4dm/nnls-chroma && cd nnls-chroma
-for f in chromamethods NNLSBase NNLSChroma Chordino Tuning plugins viterbi; do
-  clang++ -arch arm64 -O3 -ffast-math -I/opt/homebrew/include -fPIC -c $f.cpp -o $f.o
-done
-clang -arch arm64 -O3 -ffast-math -I/opt/homebrew/include -fPIC -c nnls.c -o nnls.o
-clang++ -arch arm64 -dynamiclib -install_name nnls-chroma.dylib -o nnls-chroma.dylib \
-  *.o /opt/homebrew/lib/libvamp-sdk.a -exported_symbols_list vamp-plugin.list -framework Accelerate
-mkdir -p ~/Library/Audio/Plug-Ins/Vamp
-cp nnls-chroma.dylib nnls-chroma.n3 nnls-chroma.cat ~/Library/Audio/Plug-Ins/Vamp/
+cd web && npm run deploy        # builds with base /chops/ and pushes dist to the gh-pages branch
 ```
-
-Verify it loads:
-
-```bash
-uv run python -c "import vamp; print(vamp.list_plugins())"
-# -> ['nnls-chroma:chordino', 'nnls-chroma:nnls-chroma', 'nnls-chroma:tuning']
-```
-
-On Intel macOS / Windows / Linux you can instead install the prebuilt
-[Vamp Plugin Pack](https://www.vamp-plugins.org/download.html). If the plugin is
-missing, the chords stage raises a clear error.
+Needs a GitHub remote on the repo; the built `dist/` (app + content + audio) is
+served statically. Hash routing means no 404 config is required. For a different
+repo name, set `CHOPS_BASE=/<repo>/`.
