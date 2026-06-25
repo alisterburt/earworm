@@ -1,12 +1,12 @@
 {
-  "name": "chops-web",
+  "name": "earworm-web",
   "private": true,
   "version": "0.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "build:pages": "CHOPS_BASE=/chops/ vite build",
+    "build:pages": "EARWORM_BASE=/earworm/ vite build",
     "preview": "vite preview",
     "deploy": "npm run build:pages && gh-pages -d dist --dotfiles"
   },

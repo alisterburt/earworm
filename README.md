@@ -1,6 +1,6 @@
-# chops
+# earworm
 
-A music-learning app: point it at a **saved Logic Pro project** and chops pulls
+A music-learning app: point it at a **saved Logic Pro project** and earworm pulls
 out the stems and Logic's own tempo/key/beat/chord analysis, transcribes each stem
 to MIDI, and adds structure + motif analysis so you can **understand a song well
 enough to arrange it for any instrument**. A Python pipeline produces the data; a
@@ -8,8 +8,8 @@ Vite + Svelte app (GitHub-Pages hostable) presents it as a single-screen worksta
 
 Logic's Stem Splitter and its chord/tempo/key detection are higher quality than
 the open-source equivalents, and a saved project already contains all of it — so
-chops reads it straight off disk (the binary chord track is reverse-engineered;
-see `src/chops/logic.py`) rather than recomputing it.
+earworm reads it straight off disk (the binary chord track is reverse-engineered;
+see `src/earworm/logic.py`) rather than recomputing it.
 
 Everything is themed on the **Sonofield** colour system — 12 hues keyed to scale
 degree relative to the tonic, arranged by circle of fifths. MIDI notes are
@@ -28,7 +28,7 @@ The app is behind a lightweight (non-secure) client-side password gate. **Passwo
 ## Input: a Logic project folder
 
 Save a Logic project **as a folder** (with assets) and run Logic's Stem Splitter so
-the stems land in `Audio Files/`. chops reads:
+the stems land in `Audio Files/`. earworm reads:
 
 ```
 <Artist - Title>/                     # folder name → artist/title + cover lookup
@@ -57,7 +57,7 @@ the stems land in `Audio Files/`. chops reads:
 | Motifs             | programmatic MIDI features + piano-roll images → `claude -p` | in-process (LLM)                    |
 
 The heavy tools (tensorflow / onnx for basic-pitch, faster-whisper) each run in an
-ephemeral environment via `uvx` / `uv run --script`, so the main `chops`
+ephemeral environment via `uvx` / `uv run --script`, so the main `earworm`
 environment stays light. The LLM stages shell out to the local `claude` CLI (your
 Claude Code login — no API key); Roman numerals are computed in the browser.
 
@@ -65,7 +65,7 @@ Claude Code login — no API key); Roman numerals are computed in the browser.
 
 ```bash
 # 1. process a Logic project folder -> content assets (web/public/content/<id>/ + library.json)
-uv run chops process "/path/to/Artist - Title"
+uv run earworm process "/path/to/Artist - Title"
 
 # 2. run the app
 cd web && npm install && npm run dev          # http://localhost:5173
@@ -87,13 +87,13 @@ web/public/content/
 Analysis runs on lossless WAVs, then transcodes to AAC (~10× smaller). `process`
 options: `--drums-midi`, `--no-lyrics`, `--whisper-model <base|small|medium|large-v3>`,
 `--no-sections`, `--no-motifs`, `--keep-wav`, `--no-transcode`, `--out <dir>`.
-Rebuild just the index with `uv run chops library`.
+Rebuild just the index with `uv run earworm library`.
 
 ## Deploy (GitHub Pages)
 
 ```bash
-cd web && npm run deploy        # builds with base /chops/ and pushes dist to the gh-pages branch
+cd web && npm run deploy        # builds with base /earworm/ and pushes dist to the gh-pages branch
 ```
 Needs a GitHub remote on the repo; the built `dist/` (app + content + audio) is
 served statically. Hash routing means no 404 config is required. For a different
-repo name, set `CHOPS_BASE=/<repo>/`.
+repo name, set `EARWORM_BASE=/<repo>/`.

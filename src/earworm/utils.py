@@ -1,4 +1,4 @@
-"""Shared helpers for the chops pipeline."""
+"""Shared helpers for the earworm pipeline."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ STEM_ORDER = ["vocals", "piano", "guitar", "drums", "bass", "other"]
 
 def log(msg: str) -> None:
     """Print a stage message to stderr so it never pollutes captured stdout."""
-    print(f"[chops] {msg}", file=sys.stderr, flush=True)
+    print(f"[earworm] {msg}", file=sys.stderr, flush=True)
 
 
 def run(cmd: list[str], **kwargs) -> subprocess.CompletedProcess:

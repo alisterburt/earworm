@@ -16,14 +16,14 @@
 
 <div class="page">
   <header>
-    <h1>chops</h1>
+    <h1>earworm</h1>
     <p class="sub">your library {#if songs?.length}· {songs.length} {songs.length === 1 ? "song" : "songs"}{/if}</p>
   </header>
 
   {#if songs === null}
     <p class="muted">loading…</p>
   {:else if songs.length === 0}
-    <p class="muted">No songs yet. Run <code>uv run chops process "&lt;file&gt;.mp3"</code>.</p>
+    <p class="muted">No songs yet. Run <code>uv run earworm process "&lt;file&gt;.mp3"</code>.</p>
   {:else}
     <div class="grid">
       {#each songs as s (s.id)}

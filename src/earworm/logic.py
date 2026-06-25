@@ -1,6 +1,6 @@
 """Read analysis straight out of a saved Logic Pro project folder.
 
-A Logic project saved as a folder contains everything chops used to compute itself,
+A Logic project saved as a folder contains everything earworm used to compute itself,
 but at Logic's (superior) quality:
 
     <project>/

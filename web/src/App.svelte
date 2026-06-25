@@ -4,12 +4,12 @@
   import Song from "./routes/Song.svelte";
 
   // Lightweight (not secure) client-side gate. Password: bleepbloop — see README.
-  let unlocked = $state(localStorage.getItem("chops-unlocked") === "1");
+  let unlocked = $state(localStorage.getItem("earworm-unlocked") === "1");
   let pw = $state("");
   let err = $state(false);
   function submit(e) {
     e?.preventDefault();
-    if (pw === "bleepbloop") { unlocked = true; localStorage.setItem("chops-unlocked", "1"); }
+    if (pw === "bleepbloop") { unlocked = true; localStorage.setItem("earworm-unlocked", "1"); }
     else { err = true; pw = ""; }
   }
 </script>
@@ -17,7 +17,7 @@
 {#if !unlocked}
   <div class="gate">
     <form onsubmit={submit}>
-      <h1>chops</h1>
+      <h1>earworm</h1>
       <!-- svelte-ignore a11y_autofocus -->
       <input type="password" placeholder="password" bind:value={pw} class:err
              autofocus oninput={() => (err = false)} />

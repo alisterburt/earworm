@@ -1,4 +1,4 @@
-"""chops command-line interface."""
+"""earworm command-line interface."""
 
 from __future__ import annotations
 

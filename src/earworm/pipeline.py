@@ -2,7 +2,7 @@
 
 Input is a saved Logic Pro project folder. Stems, tempo, key, time signature, the
 beat grid and the chord track are read straight from the project (see `logic.py`);
-chops only adds what Logic doesn't give us: per-stem MIDI (basic-pitch), lyrics
+earworm only adds what Logic doesn't give us: per-stem MIDI (basic-pitch), lyrics
 (whisper) and section/motif analysis (Claude).
 """
 

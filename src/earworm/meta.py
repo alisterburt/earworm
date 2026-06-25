@@ -31,7 +31,7 @@ def _itunes_lookup(artist: str, title: str) -> dict | None:
     term = urllib.parse.quote(f"{artist} {title}".strip())
     url = f"https://itunes.apple.com/search?term={term}&entity=song&limit=1"
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "chops/0.1"})
+        req = urllib.request.Request(url, headers={"User-Agent": "earworm/0.1"})
         with urllib.request.urlopen(req, timeout=10) as resp:
             data = json.loads(resp.read())
     except Exception as exc:  # noqa: BLE001
@@ -54,7 +54,7 @@ def _itunes_lookup(artist: str, title: str) -> dict | None:
 
 def _download(url: str, dest: Path) -> bool:
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "chops/0.1"})
+        req = urllib.request.Request(url, headers={"User-Agent": "earworm/0.1"})
         with urllib.request.urlopen(req, timeout=15) as resp:
             dest.write_bytes(resp.read())
         return True

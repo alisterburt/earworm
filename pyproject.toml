@@ -1,5 +1,5 @@
 [project]
-name = "chops"
+name = "earworm"
 version = "0.1.0"
 description = "Logic Pro project -> stems + MIDI + harmonic analysis -> web workstation"
 readme = "README.md"
@@ -18,7 +18,7 @@ dependencies = [
 ]
 
 [project.scripts]
-chops = "chops.cli:main"
+earworm = "earworm.cli:main"
 
 [build-system]
 requires = ["uv_build>=0.9.22,<0.10.0"]

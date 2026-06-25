@@ -1,5 +1,5 @@
 // Helpers to resolve + fetch content assets under the configured base path.
-const BASE = import.meta.env.BASE_URL; // "/" in dev, "/chops/" on GH Pages
+const BASE = import.meta.env.BASE_URL; // "/" in dev, "/earworm/" on GH Pages
 
 export const assetUrl = (rel) => BASE + "content/" + rel;
 
