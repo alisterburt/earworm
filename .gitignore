@@ -8,6 +8,10 @@ web/public/content/
 web/node_modules/
 web/dist/
 
+# secrets (R2 credentials for `earworm sync`; bucket URL for builds)
+.env
+web/.env*.local
+
 # python / uv
 .venv/
 __pycache__/

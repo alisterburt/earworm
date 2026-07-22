@@ -27,8 +27,11 @@ The app is behind a lightweight (non-secure) client-side password gate. **Passwo
 
 ## Input: a Logic project folder
 
-Save a Logic project **as a folder** (with assets) and run Logic's Stem Splitter so
-the stems land in `Audio Files/`. earworm reads:
+You can build this project automatically from a bare audio file with
+`earworm ingest` (see Usage), which drives the Logic Pro UI to import, analyze
+(tempo/chords/key) and stem-split, then save it. Or prepare one by hand: save a
+Logic project **as a folder** (with assets) and run Logic's Stem Splitter so the
+stems land in `Audio Files/`. Either way, earworm reads:
 
 ```
 <Artist - Title>/                     # folder name → artist/title + cover lookup
@@ -64,12 +67,27 @@ Claude Code login — no API key); Roman numerals are computed in the browser.
 ## Usage
 
 ```bash
-# 1. process a Logic project folder -> content assets (web/public/content/<id>/ + library.json)
+# 0. (optional) ingest a song end-to-end: drive Logic Pro to build the project,
+#    then run the full pipeline. macOS + Logic Pro only; needs Accessibility
+#    permission for the terminal, and Logic must stay frontmost while it runs.
+#    TARGET is either a local audio file...
+uv run earworm ingest "/path/to/MGMT - Kids.mp3"
+#    ...or a search query (top YouTube match is downloaded via yt-dlp):
+uv run earworm ingest "mgmt kids"
+#    name is parsed from the filename (claude -p); override with --artist/--song.
+#    --build-only stops after saving the Logic project (skips downstream stages).
+
+# 1. process an existing Logic project folder -> content assets (web/public/content/<id>/ + library.json)
 uv run earworm process "/path/to/Artist - Title"
 
 # 2. run the app
 cd web && npm install && npm run dev          # http://localhost:5173
 ```
+
+`ingest` saves the Logic project to `~/Music/Logic/earworm/<Artist> - <Song>`
+(override base dir with `EARWORM_LOGIC_DIR`), overwriting any existing one, then
+hands it to `process`. See `logic-automation/README.md` for the UI-automation
+details. It accepts the same downstream flags as `process`.
 
 `process` writes per-song content the app reads:
 
@@ -89,11 +107,39 @@ options: `--drums-midi`, `--no-lyrics`, `--whisper-model <base|small|medium|larg
 `--no-sections`, `--no-motifs`, `--keep-wav`, `--no-transcode`, `--out <dir>`.
 Rebuild just the index with `uv run earworm library`.
 
+## Song storage: Cloudflare R2 (CDN)
+
+The local content dir is the working copy (dev always reads it); deployed apps
+fetch songs from an R2 bucket instead of shipping ~0.5 GB of audio to GitHub
+Pages. One-time setup:
+
+1. Create an R2 bucket and enable public access (Settings → r2.dev subdomain,
+   or attach a custom domain).
+2. Create an S3 API token (R2 → Manage R2 API Tokens → Object Read & Write),
+   then `cp .env.example .env` and fill in `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`,
+   `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`.
+3. Put the bucket's public URL in `web/.env.production` as `VITE_CONTENT_BASE`
+   (production builds then read songs from the CDN and leave content out of
+   `dist`; leave it empty to keep the old bundle-everything behaviour).
+
+Then after processing songs:
+
+```bash
+uv run earworm sync             # mirror web/public/content -> the bucket
+```
+
+`sync` uploads only changed files (MD5 vs remote ETag), sets content types and
+cache headers, and (re)applies bucket CORS — required because stems play
+through `createMediaElementSource`, which silences cross-origin audio without
+CORS. `--dry-run` previews; `--delete` removes remote files for songs deleted
+locally.
+
 ## Deploy (GitHub Pages)
 
 ```bash
 cd web && npm run deploy        # builds with base /earworm/ and pushes dist to the gh-pages branch
 ```
-Needs a GitHub remote on the repo; the built `dist/` (app + content + audio) is
-served statically. Hash routing means no 404 config is required. For a different
-repo name, set `EARWORM_BASE=/<repo>/`.
+Needs a GitHub remote on the repo; the built `dist/` is served statically —
+just the app when `VITE_CONTENT_BASE` is set, app + content + audio otherwise.
+Hash routing means no 404 config is required. For a different repo name, set
+`EARWORM_BASE=/<repo>/`.
