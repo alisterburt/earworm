@@ -3,8 +3,7 @@
   import { cleanMidi } from "../lib/stores.js";
   import AbsRelToggle from "./AbsRelToggle.svelte";
 
-  let { song, engine } = $props();
-  const SPEEDS = [25, 50, 70, 80, 90, 100];
+  let { song } = $props();
   let section = $derived((song.sections || []).find((s) => $transport.time >= s.start && $transport.time < s.end));
 </script>
 
@@ -21,14 +20,6 @@
       <div class="seg">
         <button class:active={!$cleanMidi} onclick={() => cleanMidi.set(false)}>Raw</button>
         <button class:active={$cleanMidi} onclick={() => cleanMidi.set(true)}>Clean</button>
-      </div>
-    </div>
-    <div class="grp">
-      <span class="cap">speed</span>
-      <div class="seg">
-        {#each SPEEDS as s}
-          <button class:active={Math.round($transport.rate * 100) === s} onclick={() => engine.setRate(s / 100)}>{s}</button>
-        {/each}
       </div>
     </div>
     <div class="grp">

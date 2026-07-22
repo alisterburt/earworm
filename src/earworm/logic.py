@@ -31,12 +31,14 @@ from .utils import NOTE_NAMES, log
 # ---- chord record layout (64-byte packed records in ProjectData) -------------
 _REC = 64
 _Q_MAJOR, _Q_MINOR, _Q_SUS4 = 0x91, 0x89, 0xA1
-_EXT_NONE, _EXT_B7, _EXT_MAJ7 = 0x00, 0x04, 0x08  # byte[4]: triad / add ♭7 / add maj7
+# byte[4] is a bit-field for the added note: 6th (0x02), ♭7 (0x04), maj7 (0x08);
+# 0x00 = plain triad.
+_EXT_NONE, _EXT_6, _EXT_B7, _EXT_MAJ7 = 0x00, 0x02, 0x04, 0x08
 # Chord suffix per (triad quality, extension). ♭7 reads as dom7 on major, m7 on
-# minor; maj7 keeps the major-7th interval.
+# minor; maj7 keeps the major-7th interval; 6th adds the major sixth.
 _SUFFIX = {
-    (_Q_MAJOR, _EXT_NONE): "", (_Q_MAJOR, _EXT_B7): "7", (_Q_MAJOR, _EXT_MAJ7): "maj7",
-    (_Q_MINOR, _EXT_NONE): "m", (_Q_MINOR, _EXT_B7): "m7", (_Q_MINOR, _EXT_MAJ7): "m(maj7)",
+    (_Q_MAJOR, _EXT_NONE): "", (_Q_MAJOR, _EXT_6): "6", (_Q_MAJOR, _EXT_B7): "7", (_Q_MAJOR, _EXT_MAJ7): "maj7",
+    (_Q_MINOR, _EXT_NONE): "m", (_Q_MINOR, _EXT_6): "m6", (_Q_MINOR, _EXT_B7): "m7", (_Q_MINOR, _EXT_MAJ7): "m(maj7)",
     (_Q_SUS4, _EXT_NONE): "sus4", (_Q_SUS4, _EXT_B7): "7sus4",
 }
 _BASS_ROOT = 0x0F  # sentinel in byte[6] meaning "root position" (no slash bass)
@@ -179,18 +181,6 @@ def _valid_chord_record(rec: bytes) -> bool:
     )
 
 
-def _find_chord_array(data: bytes) -> int:
-    """Return the byte offset of the first chord record, or -1.
-
-    The absolute offset is project-specific, so anchor on the first run of >=3
-    consecutive valid records at stride 64 rather than hard-coding it.
-    """
-    for off in range(len(data) - _REC):
-        if all(_valid_chord_record(data[off + k * _REC: off + (k + 1) * _REC]) for k in range(3)):
-            return off
-    return -1
-
-
 def _chord_label(rec: bytes) -> str:
     root = NOTE_NAMES[rec[8]]
     suffix = _SUFFIX.get((rec[3], rec[4]))
@@ -203,31 +193,48 @@ def _chord_label(rec: bytes) -> str:
     return label
 
 
+def _chord_record(rec: bytes) -> dict:
+    """One chord record -> {start (s), label, root_pc, quality, bass}."""
+    return {
+        "start": round(int.from_bytes(rec[27:32], "little") / 1e9, 4),
+        "label": _chord_label(rec),
+        "root_pc": rec[8],
+        "quality": {_Q_MAJOR: "major", _Q_MINOR: "minor", _Q_SUS4: "sus4"}.get(rec[3], "?"),
+        "bass": rec[6] if (rec[6] != _BASS_ROOT and rec[6] < 12) else None,
+    }
+
+
 def read_chords(project_data: Path, duration: float) -> list[dict]:
     """Decode the chord track. Positions are nanoseconds; chords sit on beats.
 
-    Each chord's `end` is the next chord's start (last extends to `duration`).
+    Records appear at varying strides/gaps and even different sizes (64-byte in
+    older projects, 48-byte for region "Analyze Chords"), so a fixed-stride walk
+    from an anchor undercounts — it stops at the first empty grid slot. Instead we
+    collect EVERY structurally-valid record (the validator is strict enough that
+    non-chord data doesn't match), keep those within the song, order by position,
+    and drop exact duplicates. Each chord's `end` is the next chord's start (last
+    extends to `duration`).
     """
     data = project_data.read_bytes()
-    start = _find_chord_array(data)
-    if start < 0:
+    raw: list[dict] = []
+    seen: set = set()
+    for off in range(len(data) - _REC):
+        rec = data[off:off + _REC]
+        if not _valid_chord_record(rec):
+            continue
+        c = _chord_record(rec)
+        if not (0.0 <= c["start"] <= duration + 1.0):
+            continue
+        key = (round(c["start"], 3), c["label"])
+        if key in seen:
+            continue
+        seen.add(key)
+        raw.append(c)
+    raw.sort(key=lambda c: c["start"])
+
+    if not raw:
         log("no chord track found in ProjectData")
         return []
-
-    raw: list[dict] = []
-    off = start
-    while _valid_chord_record(data[off:off + _REC]):
-        rec = data[off:off + _REC]
-        pos_ns = int.from_bytes(rec[27:32], "little")
-        raw.append({
-            "start": round(pos_ns / 1e9, 4),
-            "label": _chord_label(rec),
-            "root_pc": rec[8],
-            "quality": {_Q_MAJOR: "major", _Q_MINOR: "minor", _Q_SUS4: "sus4"}.get(rec[3], "?"),
-            "bass": rec[6] if (rec[6] != _BASS_ROOT and rec[6] < 12) else None,
-        })
-        off += _REC
-
     for i, c in enumerate(raw):
         c["end"] = raw[i + 1]["start"] if i + 1 < len(raw) else round(duration, 4)
     log(f"decoded {len(raw)} chords from Logic project")
@@ -240,16 +247,33 @@ _FLAT_MAJOR_TONICS = {5, 10, 3, 8, 1, 6}   # F Bb Eb Ab Db Gb
 _FLAT_MINOR_TONICS = {2, 7, 0, 5, 10, 3}   # Dm Gm Cm Fm Bbm Ebm
 
 
-def respell_chords(chords: list[dict], key: dict) -> list[dict]:
-    """Rewrite chord labels with flats or sharps to match the key signature
-    (e.g. Bb/Eb rather than A#/D# in Bb major). Roots/bass come from pitch
-    classes; the quality/extension suffix is preserved from the built label."""
+def _key_uses_flats(key: dict) -> bool:
+    """Whether `key` is conventionally spelled with flats (Bb/Eb vs A#/D#)."""
     tonic_pc = NOTE_NAMES.index(key["tonic"]) if key["tonic"] in NOTE_NAMES else \
         (_FLAT_NAMES.index(key["tonic"]) if key["tonic"] in _FLAT_NAMES else 0)
-    flats = tonic_pc in (_FLAT_MINOR_TONICS if key.get("mode") == "minor" else _FLAT_MAJOR_TONICS)
-    if not flats:
-        return chords
+    return tonic_pc in (_FLAT_MINOR_TONICS if key.get("mode") == "minor" else _FLAT_MAJOR_TONICS)
+
+
+def respell_chords(chords: list[dict], keys: list[dict] | dict) -> list[dict]:
+    """Rewrite each chord label with flats or sharps to match the key signature in
+    effect *at that chord's time* (e.g. Bb/Eb rather than A#/D# in Bb major). Roots
+    and bass come from pitch classes; the quality/extension suffix is preserved.
+
+    `keys` is the cleaned key-region list (start/end in seconds); a single key dict
+    is accepted too and treated as covering the whole song.
+    """
+    regions = keys if isinstance(keys, list) else [keys]
+
+    def key_at(t: float) -> dict | None:
+        for k in regions:
+            if k.get("start", 0.0) <= t < k.get("end", float("inf")):
+                return k
+        return regions[-1] if regions else None
+
     for c in chords:
+        key = key_at(c["start"])
+        if not key or not _key_uses_flats(key):
+            continue  # sharp-spelled key (or none): leave the sharp label as built
         root = c["root_pc"]
         suffix = c["label"][len(NOTE_NAMES[root]):]  # quality/ext (+ "/bass")
         bass = c.get("bass")
@@ -260,9 +284,11 @@ def respell_chords(chords: list[dict], key: dict) -> list[dict]:
 
 
 # Logic's global Signature track stores key-signature events as 32-byte records:
-#   [0:2] = 32 00 (marker) | [2:10] = position (LE u64; /2^28 = beats from bar 1)
+#   [0:2] = 32 00 (marker) | [2:10] = position (LE u64 fixed-point: 2^28 per whole
+#           note, so /2^26 = quarter-note beats from bar 1 — independent of meter)
 #   [12]  = SignatureKey (fifths+7, +16 if minor; C=7 G=8 D=9 Bb=5 Em=24) | [23] = 88
 # They form one contiguous, position-ordered run whose first event is at beat 0.
+_BEAT_FIXED = 2 ** 26  # position units per quarter-note beat
 _SHARP_NAMES = NOTE_NAMES
 
 
@@ -308,7 +334,7 @@ def read_key_regions(project_data: Path, beats: list[float], tempo: float, durat
     events = []
     for o in track:
         rec = data[o:o + 32]
-        beat = int.from_bytes(rec[2:10], "little") / 2 ** 28
+        beat = int.from_bytes(rec[2:10], "little") / _BEAT_FIXED
         start = 0.0 if beat == 0 else round(_beat_to_sec(beat, beats, tempo), 4)
         events.append({"start": start, **_decode_sigkey(rec[12])})
     for i, e in enumerate(events):
@@ -316,12 +342,25 @@ def read_key_regions(project_data: Path, beats: list[float], tempo: float, durat
     return events
 
 
-def clean_key_regions(regions: list[dict], min_dur: float = 20.0) -> tuple[dict, list[dict]]:
+def clean_key_regions(regions: list[dict], min_dur: float = 20.0,
+                      mod_dur: float = 45.0) -> tuple[dict, list[dict]]:
     """Tidy raw key regions and return (dominant_key, cleaned_regions).
 
-    Merges consecutive same-key regions, absorbs any region shorter than `min_dur`
-    into its larger neighbour (so we keep clearly-distinct sections >20s, otherwise
-    collapse toward the dominant key), and picks the dominant key by total duration.
+    Logic's region key-analysis is noisy: a song firmly in one key often flickers
+    to its V/IV for a few seconds. The tonic is the key the song keeps RETURNING to
+    (most segments) — not necessarily the longest by total duration (a I↔V flicker
+    can leave V marginally ahead). So we:
+
+      1. merge consecutive same-key regions;
+      2. take `home` = the key with the most segments (ties -> longest total);
+      3. absorb every *departure* from `home` shorter than `mod_dur` into its larger
+         neighbour (brief flickers collapse back toward home — e.g. a G-major song
+         the analyser keeps flipping to D);
+      4. absorb any residual region shorter than `min_dur` (leftover noise);
+      5. report `home` as the dominant/default key.
+
+    A genuinely single-key song collapses to one region; a real multi-key song keeps
+    its sustained (>mod_dur) sections.
     """
     if not regions:
         return None, []
@@ -335,37 +374,42 @@ def clean_key_regions(regions: list[dict], min_dur: float = 20.0) -> tuple[dict,
                 out.append(dict(r))
         return out
 
-    merged = merge_same(regions)
-    # Absorb the globally-shortest sub-min region into its larger neighbour, repeat.
-    # Shortest-first keeps rapid alternations collapsing toward the dominant key
-    # rather than leaving spurious medium regions.
-    while len(merged) > 1:
-        dur = lambda r: r["end"] - r["start"]
-        i = min(range(len(merged)), key=lambda k: dur(merged[k]))
-        if dur(merged[i]) >= min_dur:
-            break
-        if i == 0:
-            nb = 1
-        elif i == len(merged) - 1:
-            nb = i - 1
-        else:
-            nb = i - 1 if dur(merged[i - 1]) >= dur(merged[i + 1]) else i + 1
-        merged[nb]["start"] = min(merged[nb]["start"], merged[i]["start"])
-        merged[nb]["end"] = max(merged[nb]["end"], merged[i]["end"])
-        merged.pop(i)
-        merged = merge_same(merged)
+    dur = lambda r: r["end"] - r["start"]
 
+    def absorb(merged, predicate):
+        # repeatedly fold the shortest region matching `predicate` into its larger
+        # neighbour, then re-merge equal neighbours
+        while len(merged) > 1:
+            cand = [i for i in range(len(merged)) if predicate(merged[i])]
+            if not cand:
+                break
+            i = min(cand, key=lambda k: dur(merged[k]))
+            if i == 0:
+                nb = 1
+            elif i == len(merged) - 1:
+                nb = i - 1
+            else:
+                nb = i - 1 if dur(merged[i - 1]) >= dur(merged[i + 1]) else i + 1
+            merged[nb]["start"] = min(merged[nb]["start"], merged[i]["start"])
+            merged[nb]["end"] = max(merged[nb]["end"], merged[i]["end"])
+            merged.pop(i)
+            merged[:] = merge_same(merged)
+        return merged
+
+    merged = merge_same(regions)
+
+    # home = the key the song keeps returning to: most segments, ties -> longest total
+    counts: dict[str, int] = {}
     totals: dict[str, float] = {}
     for r in merged:
-        totals[r["name"]] = totals.get(r["name"], 0.0) + (r["end"] - r["start"])
-    dom_name = max(totals, key=totals.get)
-    src = next(r for r in merged if r["name"] == dom_name)
-    dominant = {k: src[k] for k in ("tonic", "mode", "name", "confidence", "source") if k in src}
+        counts[r["name"]] = counts.get(r["name"], 0) + 1
+        totals[r["name"]] = totals.get(r["name"], 0.0) + dur(r)
+    home_name = max(counts, key=lambda n: (counts[n], totals[n]))
+    home_src = next(r for r in merged if r["name"] == home_name)
 
-    # If one key clearly prevails, collapse to a single whole-song region (a song
-    # that just modulates briefly is "in" its dominant key); otherwise keep the
-    # distinct >20s sections for live-set use.
-    span = merged[-1]["end"] - merged[0]["start"]
-    if span > 0 and totals[dom_name] / span >= 0.6:
-        merged = [{"start": merged[0]["start"], "end": merged[-1]["end"], **dominant}]
+    # collapse short departures from home (tonicizations), then residual noise
+    absorb(merged, lambda r: r["name"] != home_name and dur(r) < mod_dur)
+    absorb(merged, lambda r: dur(r) < min_dur)
+
+    dominant = {k: home_src[k] for k in ("tonic", "mode", "name", "confidence", "source") if k in home_src}
     return dominant, merged

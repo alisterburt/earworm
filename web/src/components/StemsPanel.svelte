@@ -7,6 +7,18 @@
   const stems = presentStems(song);
   const melodic = new Set(melodicStems(song));
   let allOn = $derived($transport.active.size >= stems.length);
+
+  // Solo is additive: from "all on" it isolates one track; clicking another solo
+  // adds it (so you can solo two+ at once); clicking a soloed track removes it,
+  // and emptying the solo group returns to all-on.
+  function solo(n) {
+    const cur = new Set($transport.active);
+    let next;
+    if (cur.size >= stems.length) next = new Set([n]);
+    else if (cur.has(n)) { cur.delete(n); next = cur.size ? cur : new Set(stems); }
+    else { cur.add(n); next = cur; }
+    engine.setActive([...next]);
+  }
 </script>
 
 <div class="panel">
@@ -17,13 +29,13 @@
   <div class="panel-body">
     {#each stems as n}
       {@const on = $transport.active.has(n)}
-      {@const soloed = $transport.active.size === 1 && on}
+      {@const soloed = on && $transport.active.size < stems.length}
       {@const meta = stemMeta(n)}
       <div class="row" class:on style="--c:{meta.color}">
         <button class="ctl mute" class:active={!on} title="{on ? 'mute' : 'unmute'} {n}"
           onclick={() => engine.toggleStem(n)}>M</button>
         <button class="ctl solo" class:active={soloed} title="solo {n}"
-          onclick={() => engine.setActive([n])}>S</button>
+          onclick={() => solo(n)}>S</button>
         <span class="label">
           <span class="dot"></span>
           <span class="icon">{meta.icon}</span>

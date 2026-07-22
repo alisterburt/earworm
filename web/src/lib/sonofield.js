@@ -31,6 +31,18 @@ export function keyScalePcs(tonicPc, mode) {
   return new Set([...scale].map((d) => (tonicPc + d) % 12));
 }
 
+// The key region {tonic, mode, ...} in effect at time `t`, from an ordered list
+// of regions (each with start/end in seconds). Clamps to the first/last region
+// outside the covered span. Falls back to `fallback` (e.g. song.key) when there
+// are no regions. Lets the UI honour mid-song key changes.
+export function keyAt(keys, t, fallback = null) {
+  if (keys && keys.length) {
+    for (const k of keys) if (t >= k.start && t < k.end) return k;
+    return t < keys[0].start ? keys[0] : keys[keys.length - 1];
+  }
+  return fallback;
+}
+
 // ---- chord label parsing + Roman numerals ----
 const ROOT_RE = /^([A-G])([#b]?)(.*)$/;
 const MAJ_NUM = { 0:"I",1:"♭II",2:"II",3:"♭III",4:"III",5:"IV",6:"♯IV",7:"V",8:"♭VI",9:"VI",10:"♭VII",11:"VII" };
@@ -129,4 +141,32 @@ export const tokenizeDegrees = (s) => (s || "").split(/[\s\-–—→,|]+/).filt
 export function chordName(label, tonicPc, mode, relative) {
   if (!label || label === "N" || label === "NC") return relative ? "" : label;
   return relative ? chordRoman(label, tonicPc, mode) : label;
+}
+
+// ---- display-only transpose (audio is unchanged) ----
+const SHARP_NAMES = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
+const FLAT_NAMES  = ["C","Db","D","Eb","E","F","Gb","G","Ab","A","Bb","B"];
+const FLAT_MAJOR_PCS = new Set([5, 10, 3, 8, 1, 6]); // F Bb Eb Ab Db Gb
+
+// spell a pitch class with sharps or flats
+export const spellPc = (pc, flats) => (flats ? FLAT_NAMES : SHARP_NAMES)[(((pc % 12) + 12) % 12)];
+
+// whether a key (given its tonic pc + mode) is conventionally spelled with flats
+export function keyUsesFlats(tonicPc, mode) {
+  const relMajor = mode === "minor" ? tonicPc + 3 : tonicPc;
+  return FLAT_MAJOR_PCS.has((((relMajor % 12) + 12) % 12));
+}
+
+// transpose every root/bass letter in a chord (or bare note) label by `semis`,
+// respelling with sharps/flats. Suffixes (m, maj7, sus4, …) are left untouched.
+export function transposeLabel(label, semis, flats) {
+  if (!label || !semis || label === "N" || label === "NC") return label;
+  return label.replace(/([A-G])([#b]?)/g, (_, letter, acc) =>
+    spellPc(notePc(letter + acc) + semis, flats));
+}
+
+// transposed "<Tonic> <mode>" key name
+export function transposeKeyName(tonic, mode, semis) {
+  const pc = notePc(tonic) + semis;
+  return spellPc(pc, keyUsesFlats(pc, mode)) + (mode === "minor" ? " minor" : " major");
 }

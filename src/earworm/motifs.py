@@ -35,14 +35,21 @@ def detect_motifs(analysis: dict, song_dir: Path) -> list[dict]:
     catalog = "\n".join(
         f"- id {m['id']} [{m['type']}] degrees={m['degrees']!r}"
         + (f" chords={m['labels']!r}" if m.get("labels") else "")
+        + (f" key={m['key']!r}" if m.get("key") else "")
         + f" where={m['where']!r} instruments={m['instruments']}"
         for m in motifs
     )
+    # Note any mid-song key changes so names/descriptions can reference them; each
+    # motif's degrees are relative to ITS OWN key (the per-motif `key=` above).
+    key_names = [k["name"] for k in (analysis.get("keys") or []) if k.get("name")]
+    key_line = analysis["key"]["name"]
+    if len(set(key_names)) > 1:
+        key_line += " overall; key changes through " + ", ".join(dict.fromkeys(key_names))
     prompt = (
         "You are helping someone LEARN this song to arrange it. Below are motifs already "
         "extracted from the actual chords/MIDI — the degrees and locations are CORRECT and "
-        "MUST NOT be changed.\n\n"
-        f"Key: {analysis['key']['name']}, {analysis['tempo']} BPM.\n\n"
+        "MUST NOT be changed. Each motif's degrees are relative to its own `key`.\n\n"
+        f"Key: {key_line}, {analysis['tempo']} BPM.\n\n"
         f"Motifs:\n{catalog}\n\n"
         "For each motif worth learning, return {\"id\": <id>, \"name\": \"short memorable name\", "
         "\"description\": \"1-2 sentences on what it is and why it matters for arranging\"}. "

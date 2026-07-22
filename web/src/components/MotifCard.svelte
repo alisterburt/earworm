@@ -1,14 +1,25 @@
 <script>
   import { stemMeta, melodicStems } from "../lib/stems.js";
-  import { selectedStem, relativeMode } from "../lib/stores.js";
-  import { notePc, pcColor } from "../lib/sonofield.js";
+  import { selectedStem, relativeMode, transpose } from "../lib/stores.js";
+  import { notePc, pcColor, keyUsesFlats, transposeLabel, tokenSemitone, PALETTE } from "../lib/sonofield.js";
 
   let { motif, song, engine } = $props();
   const tonicPc = notePc(song.key?.tonic || "C");
+  // absolute chips respell to the transposed key; colours stay (degree-relative)
+  let flats = $derived(keyUsesFlats(tonicPc + $transpose, song.key?.mode || "major"));
   // Each token shows its degree/roman or its absolute note/chord per the toggle,
   // coloured by pitch class either way. Fall back to a parsed degrees string.
   const tokens = motif.tokens
     || (motif.degrees || "").split(/\s+/).filter(Boolean).map((d) => ({ deg: d, note: d, pc: null }));
+  // Colour each chip by its scale degree (key-independent), so it matches the
+  // degree shown AND stays correct for motifs whose key isn't the song's global
+  // key. Falls back to pitch-class colour, then neutral.
+  const chipColor = (tk) => {
+    const semi = tokenSemitone(tk.deg);
+    return semi != null ? PALETTE[semi] : (tk.pc != null ? pcColor(tk.pc, tonicPc) : "#5b6270");
+  };
+  // Motif's local key, shown only when it differs from the song's global key.
+  const localKey = motif.key && motif.key !== song.key?.name ? motif.key : null;
   const TYPE = {
     progression: { label: "Progression", color: "#6a7bff" },
     melody: { label: "Melody", color: "#e74da7" },
@@ -63,11 +74,12 @@
   <div class="head">
     <span class="badge">{typ(motif.type).label}</span>
     <span class="name">{motif.name}</span>
+    {#if localKey}<span class="mkey" title="this motif's key">{localKey}</span>{/if}
   </div>
   {#if tokens.length}
     <span class="chips">
       {#each tokens as tk}
-        <span class="chip" style="--c:{tk.pc != null ? pcColor(tk.pc, tonicPc) : '#5b6270'}">{$relativeMode ? tk.deg : tk.note}</span>
+        <span class="chip" style="--c:{chipColor(tk)}">{$relativeMode ? tk.deg : transposeLabel(tk.note, $transpose, flats)}</span>
       {/each}
     </span>
   {/if}
@@ -91,6 +103,9 @@
     color: var(--t); background: color-mix(in srgb, var(--t) 16%, transparent);
     padding: 2px 7px; border-radius: var(--r-sm); flex: none; }
   .name { font-weight: 650; font-size: var(--t-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mkey { flex: none; margin-left: auto; font-size: 9px; font-weight: 700; letter-spacing: .03em;
+    color: var(--text-dim); background: color-mix(in srgb, var(--text-dim) 14%, transparent);
+    padding: 2px 6px; border-radius: var(--r-sm); }
   .chips { display: inline-flex; flex-wrap: wrap; gap: 4px; }
   .chip { font: 600 12px var(--mono); padding: 2px 8px; border-radius: var(--r-sm);
     color: var(--c); background: color-mix(in srgb, var(--c) 16%, transparent);

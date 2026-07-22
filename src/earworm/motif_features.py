@@ -27,6 +27,18 @@ def _note_names(key: dict) -> list[str]:
     return _FLAT_NAMES if flats else sf.NOTE_NAMES
 
 
+def _key_at(analysis: dict, t: float) -> dict:
+    """Key region in effect at time `t` (from analysis['keys']); falls back to the
+    single analysis['key']. Lets motif degrees use the LOCAL key per section."""
+    regions = analysis.get("keys") or []
+    if not regions:
+        return analysis["key"]
+    for k in regions:
+        if k.get("start", 0.0) <= t < k.get("end", float("inf")):
+            return k
+    return regions[0] if t < regions[0].get("start", 0.0) else regions[-1]
+
+
 def section_type(name: str) -> str:
     """'Verse 1' -> 'Verse'; collapses numbered repeats to a single type."""
     return re.sub(r"\s*\d+\s*$", "", name or "").strip() or (name or "Section")
@@ -84,31 +96,37 @@ def _phrase_tokens(notes: list[dict], tonic_pc: int, names: list[str], max_notes
     return out
 
 
-def _motif(type_, tokens, where, bars, instruments) -> dict:
-    return {"type": type_, "tokens": tokens,
-            "degrees": " ".join(t["deg"] for t in tokens),
-            "labels": " ".join(t["note"] for t in tokens),
-            "where": where, "bars": bars, "instruments": instruments}
+def _motif(type_, tokens, where, bars, instruments, key=None) -> dict:
+    m = {"type": type_, "tokens": tokens,
+         "degrees": " ".join(t["deg"] for t in tokens),
+         "labels": " ".join(t["note"] for t in tokens),
+         "where": where, "bars": bars, "instruments": instruments}
+    if key and key.get("name"):
+        m["key"] = key["name"]  # local key (for the LLM + UI when it isn't the global key)
+    return m
 
 
 def progression_motifs(analysis: dict) -> list[dict]:
     chords = analysis.get("chords") or []
     sections = analysis.get("sections") or []
-    key = analysis["key"]
     insts = _harmonic_stems(analysis)
+    # Group by the absolute progression so instances in different keys stay
+    # separate; each group's romans use that section's LOCAL key. (Under a single
+    # key this matches the old roman-keyed grouping exactly.)
     seen: dict[str, dict] = {}
     for s in sections:
         cyc = _cycle(_section_chords(chords, s))
         if len(cyc) < 2:
             continue
-        rkey = " ".join(roman.to_roman(lbl, key["tonic"], key["mode"]) for lbl in cyc)
-        seen.setdefault(rkey, {"cyc": cyc, "secs": []})["secs"].append(s)
+        seen.setdefault("|".join(cyc),
+                        {"cyc": cyc, "key": _key_at(analysis, s["start"]), "secs": []})["secs"].append(s)
     motifs = []
     for ent in seen.values():
         types = sorted({section_type(x["name"]) for x in ent["secs"]})
         bars = "; ".join(f"{x['name']} (bars {x.get('startBar','?')}-{x.get('endBar','?')})"
                          for x in ent["secs"][:4])
-        motifs.append(_motif("progression", _chord_tokens(ent["cyc"], key), ", ".join(types), bars, insts))
+        motifs.append(_motif("progression", _chord_tokens(ent["cyc"], ent["key"]),
+                             ", ".join(types), bars, insts, ent["key"]))
     return motifs
 
 
@@ -117,19 +135,18 @@ def _melodic_motifs(analysis: dict, stem: str, kind: str, max_types: int) -> lis
     notes = s_stem.get("notes_clean") or s_stem.get("notes") or []
     if not notes:
         return []
-    tonic_pc = sf.note_pc(analysis["key"]["tonic"])
-    names = _note_names(analysis["key"])
     out, seen_types = [], set()
     for s in analysis.get("sections") or []:
         st = section_type(s["name"])
         if st in seen_types:
             continue
+        skey = _key_at(analysis, s["start"])  # local key for this section's degrees
         seg = [n for n in notes if s["start"] <= n["s"] < s["end"]]
-        toks = _phrase_tokens(seg, tonic_pc, names)
+        toks = _phrase_tokens(seg, sf.note_pc(skey["tonic"]), _note_names(skey))
         if len(toks) >= 3:
             seen_types.add(st)
             bars = f"{s['name']} (bars {s.get('startBar','?')}-{s.get('endBar','?')})"
-            out.append(_motif(kind, toks, st, bars, [stem]))
+            out.append(_motif(kind, toks, st, bars, [stem], skey))
         if len(out) >= max_types:
             break
     return out

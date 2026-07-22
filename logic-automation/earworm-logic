@@ -1,0 +1,114 @@
+#!/usr/bin/env bash
+# earworm-logic — automate Logic Pro processing of an mp3.
+#
+#   ./earworm-logic <file.mp3> [--artist "X"] [--song "Y"] [--keep-open]
+#
+# Pipeline: reset Logic -> empty project (+SI track) -> audio track ->
+# import mp3 -> apply region tempo -> analyze chords -> analyze key ->
+# stem split (all stems) -> Save As ~/Music/Logic/earworm/<Artist> - <Song>.
+#
+# Naming: derived from the mp3 filename via `claude -p` (cleans messy
+# YouTube-style names), overridable with --artist/--song.
+
+set -euo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SAVE_DIR="${EARWORM_LOGIC_DIR:-$HOME/Music/Logic/earworm}"
+
+die() { echo "error: $*" >&2; exit 1; }
+log() { echo "==> $*"; }
+
+# ---- args ----
+MP3=""
+ARTIST=""
+SONG=""
+DISCARD_OPEN=1   # dev default: discard any open project on reset
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --artist) ARTIST="$2"; shift 2;;
+    --song)   SONG="$2"; shift 2;;
+    --save-open) DISCARD_OPEN=0; shift;;
+    -*) die "unknown flag: $1";;
+    *) MP3="$1"; shift;;
+  esac
+done
+[[ -n "$MP3" ]] || die "usage: earworm-logic <file.mp3> [--artist X] [--song Y]"
+[[ -f "$MP3" ]] || die "no such file: $MP3"
+MP3="$(cd "$(dirname "$MP3")" && pwd)/$(basename "$MP3")"   # absolutize
+
+# ---- derive name ----
+if [[ -n "$ARTIST" && -n "$SONG" ]]; then
+  NAME="$ARTIST - $SONG"
+else
+  base="$(basename "$MP3")"
+  log "Cleaning name from filename via claude -p…"
+  prompt="Extract the artist and song title from this audio filename.
+Strip junk: (Official Video), [Lyrics], bracketed IDs, file extensions, and
+featured-artist clutter unless part of the real title.
+
+Reply with a single line in exactly this form (any preamble is ignored, only
+this line is read):
+NAME: <Artist> - <Song>
+
+Example -> NAME: MGMT - Kids
+
+Filename: $base"
+  # Parse the NAME: marker so leading commentary isn't mistaken for the answer.
+  NAME="$(claude -p "$prompt" 2>/dev/null | grep -m1 -i '^NAME:' | sed 's/^[Nn][Aa][Mm][Ee]:[[:space:]]*//;s/^[[:space:]]*//;s/[[:space:]]*$//')"
+  [[ -n "$NAME" ]] || NAME="${base%.*}"   # fallback: filename without extension
+fi
+# sanitize for filesystem (no slashes/colons)
+NAME="$(printf '%s' "$NAME" | tr '/:' '--')"
+log "Project name: $NAME"
+
+mkdir -p "$SAVE_DIR"
+
+# ---- reset Logic to a clean state ----
+reset_logic() {
+  if pgrep -x "Logic Pro" >/dev/null; then
+    log "Quitting running Logic Pro…"
+    if [[ "$DISCARD_OPEN" -eq 1 ]]; then
+      osascript -e 'tell application "Logic Pro" to quit saving no' >/dev/null 2>&1 || true
+    else
+      osascript -e 'tell application "Logic Pro" to quit saving yes' >/dev/null 2>&1 || true
+    fi
+    # wait for exit; force-kill if it hangs on a dialog
+    for _ in $(seq 1 20); do
+      pgrep -x "Logic Pro" >/dev/null || break
+      sleep 0.5
+    done
+    if pgrep -x "Logic Pro" >/dev/null; then
+      log "Force-killing stuck Logic…"
+      pkill -9 "Logic Pro" || true
+      sleep 1
+    fi
+  fi
+}
+
+launch_logic() {
+  log "Launching Logic Pro…"
+  open -a "Logic Pro"
+  for _ in $(seq 1 60); do
+    pgrep -x "Logic Pro" >/dev/null && return 0
+    sleep 0.5
+  done
+  die "Logic Pro did not launch"
+}
+
+reset_logic
+
+# Overwrite cleanly: remove any existing project folder before saving, so Logic
+# writes a fresh one instead of accumulating numbered-duplicate stems. Logic is
+# quit at this point, so the folder isn't locked.
+if [[ -d "$SAVE_DIR/$NAME" ]]; then
+  log "Removing existing project folder $SAVE_DIR/$NAME"
+  rm -rf "$SAVE_DIR/$NAME"
+fi
+
+launch_logic
+sleep 3   # let the chooser / UI settle
+
+log "Driving Logic UI (do not touch the keyboard/mouse)…"
+osascript "$HERE/lib/automate.applescript" "$MP3" "$NAME" "$SAVE_DIR"
+
+log "Saved to: $SAVE_DIR/$NAME"

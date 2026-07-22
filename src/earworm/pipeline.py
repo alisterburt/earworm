@@ -81,7 +81,7 @@ def process(
     if not raw_regions:
         raw_regions = [{"start": 0.0, "end": round(duration, 4), **key_info}]
     key_info, regions = logic_stage.clean_key_regions(raw_regions)
-    logic_stage.respell_chords(chord_spans, key_info)  # flats/sharps to match the key
+    logic_stage.respell_chords(chord_spans, regions)  # flats/sharps per the local key
     log(f"key: {key_info['name']} | {len(regions)} region(s): {[r['name'] for r in regions]}")
 
     # 3. Metadata + cover art (iTunes lookup keyed off the folder name).

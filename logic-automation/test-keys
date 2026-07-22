@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# Fast key-analysis test: import + analyze chords + <settle>s + analyze key,
+# WITHOUT stem-splitting or downstream processing. Reports the resulting key
+# regions so we can dial in the minimal settle delay for ⌃⌥⌘3 to fire.
+#
+#   ./test-keys [settle_seconds] [mp3]
+set -euo pipefail
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SETTLE="${1:-30}"
+MP3="${2:-/Users/aburt/Music/transcriptions/Fred again.. - Tiny Desk Concert.mp3}"
+SAVE_DIR="/tmp/earworm-keytest"; NAME="keytest"
+mkdir -p "$SAVE_DIR"; rm -rf "$SAVE_DIR/$NAME"
+
+reset_logic() {
+  pgrep -x "Logic Pro" >/dev/null || return 0
+  osascript -e 'tell application "Logic Pro" to quit saving no' >/dev/null 2>&1 || true
+  for _ in $(seq 1 20); do pgrep -x "Logic Pro" >/dev/null || return 0; sleep 0.5; done
+  pkill -9 "Logic Pro" 2>/dev/null || true; sleep 1
+}
+reset_logic
+open -a "Logic Pro"
+for _ in $(seq 1 60); do pgrep -x "Logic Pro" >/dev/null && break; sleep 0.5; done
+sleep 3
+
+echo "=== driving Logic: import + chords + ${SETTLE}s settle + key (NO stem split) ==="
+osascript "$HERE/lib/automate.applescript" "$MP3" "$NAME" "$SAVE_DIR" "$SETTLE"
+
+echo "=== key regions decoded from the saved test project ==="
+cd "$HERE/.."
+uv run python -c "
+from pathlib import Path
+from earworm import logic as L
+proj = L.find_project(Path('$SAVE_DIR/$NAME'))
+meta = L.read_metadata(proj.metadata_plist)
+data = proj.project_data.read_bytes()
+n = sum(1 for o in range(len(data) - 32) if L._is_sig_record(data[o:o + 32]))
+binfo = L.read_beats(proj.mamd, meta['time_signature']['numerator']) if proj.mamd else {'beats': []}
+dur = binfo['beats'][-1] if binfo['beats'] else 1604
+raw = L.read_key_regions(proj.project_data, binfo['beats'], meta['tempo'], dur)
+print(f'settle=${SETTLE}s -> sig records: {n}  | regions: {[r[\"name\"] for r in raw]}')
+"

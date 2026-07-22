@@ -2,8 +2,9 @@
   import { onMount } from "svelte";
   import { get } from "svelte/store";
   import { transport } from "../lib/engine.js";
-  import { zoomBars, relativeMode, selectedStem, cleanMidi } from "../lib/stores.js";
-  import { notePc, pcColor, degreeLabel, keyScalePcs, chordRootPc, chordName, chordColorAt } from "../lib/sonofield.js";
+  import { zoomBars, relativeMode, selectedStem, cleanMidi, transpose } from "../lib/stores.js";
+  import { notePc, pcColor, degreeLabel, keyScalePcs, chordRootPc, chordName, chordColorAt,
+    spellPc, keyUsesFlats, transposeLabel, keyAt } from "../lib/sonofield.js";
   import { melodicStems } from "../lib/stems.js";
   import { playNote } from "../lib/synth.js";
 
@@ -24,9 +25,13 @@
   const C = { text:"#eef1f6", dim:"#9aa3b2", faint:"#6b7280", panel:"#15171c",
               rowA:"#171a21", rowB:"#11141a", beat:"#20242d", bar:"#39414f", ph:"#ff5d5d", loop:"#6a7bff" };
 
-  const tonicPc = notePc(song.key?.tonic || "C");
-  const mode = song.key?.mode || "major";
-  const scale = keyScalePcs(tonicPc, mode);
+  // Key in effect at a given time. song.keys is the (possibly multi-region) key
+  // track; fall back to the single song.key. Everything degree/colour/roman is
+  // computed against the LOCAL key so mid-song modulations render correctly.
+  const keyRegions = song.keys?.length ? song.keys : null;
+  const keyFallback = song.key || { tonic: "C", mode: "major" };
+  const keyAtT = (t) => keyAt(keyRegions, t, keyFallback);
+  const tonicAtT = (t) => notePc(keyAtT(t).tonic || "C");
   const downbeats = song.downbeats || [], beats = song.beats || [];
   const barDur = downbeats.length > 1
     ? (downbeats.slice(1).map((b,i)=>b-downbeats[i]).sort((a,b)=>a-b)[downbeats.length>>1] || 2) : 2;
@@ -36,8 +41,10 @@
   const chords = song.chords || [];
   const selOr = () => get(selectedStem) || stems[0];
   const notesFor = () => song.stems[selOr()]?.[get(cleanMidi) ? "notes_clean" : "notes"] || [];
-  const noteColor = (n) => MONO.has(selOr()) ? pcColor(((n.pitch%12)+12)%12, tonicPc)
-                          : (chordColorAt(chords, n.s, tonicPc) || pcColor(((n.pitch%12)+12)%12, tonicPc));
+  // colour each note by its scale degree in the key active at the note's time
+  const noteColor = (n) => { const tp = tonicAtT(n.s);
+    return MONO.has(selOr()) ? pcColor(((n.pitch%12)+12)%12, tp)
+                             : (chordColorAt(chords, n.s, tp) || pcColor(((n.pitch%12)+12)%12, tp)); };
 
   function roundRect(ctx,x,y,w,h,r){ r=Math.max(0,Math.min(r,h/2,w/2)); ctx.beginPath();
     ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r);
@@ -59,6 +66,14 @@
     if(!canvas) return;
     const H=height; KB_Y=H-KB_H; ROLL_H=Math.max(60,KB_Y-ROLL_Y);
     const t=get(transport), now=t.time, zb=get(zoomBars), rel=get(relativeMode), lp=t.loop;
+    // display-only transpose: shift notes/keys/chord-text + tonic together so all
+    // degree/colour/roman maths stays invariant; only absolute labels & positions move.
+    // keyboard/gutter reflect the key at the playhead (the "current key"); a
+    // mid-song key change shifts the tonic/scale/colours as the playhead crosses.
+    const tr=get(transpose);
+    const kNow=keyAtT(now), tonicNow=notePc(kNow.tonic||"C"), modeNow=kNow.mode||"major";
+    const effTonic=(((tonicNow+tr)%12)+12)%12,
+          effScale=keyScalePcs(effTonic,modeNow), flats=keyUsesFlats(effTonic,modeNow), dp=(p)=>p+tr;
     // pps is zoom-controlled in both modes. Loop = view centred on the loop centre
     // (playhead moves); no loop = playhead fixed at PHF, roll scrolls.
     let originT, originX, pps=width/(zb*barDur);
@@ -82,13 +97,16 @@
     downbeats.forEach((db,i)=>{ if(db<t0||db>t1)return; const x=Math.round(X(db))+.5;
       ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,PHB); ctx.stroke(); ctx.fillText(String(i+1),x+4,12); });
 
-    // chords (dual names)
+    // chords (dual names) — each shown in the key active at its own start time
     for(const c of chords){ if(c.end<t0||c.start>t1||c.label==="N")continue;
+      const ck=keyAtT(c.start), cTonic=notePc(ck.tonic||"C"), cMode=ck.mode||"major",
+            cFlats=keyUsesFlats((((cTonic+tr)%12)+12)%12, cMode);
       const x0=X(c.start), w=X(c.end)-x0, root=chordRootPc(c.label);
-      const col=root==null?"#555b66":pcColor(root,tonicPc);
+      const col=root==null?"#555b66":pcColor(root,cTonic);
       ctx.fillStyle=col+"2e"; roundRect(ctx,x0+2,CH_Y+4,Math.max(2,w-4),CH_H-8,6); ctx.fill();
       ctx.fillStyle=col; ctx.fillRect(x0+2,CH_Y+4,3,CH_H-8);
-      if(w>22){ const pri=chordName(c.label,tonicPc,mode,rel)||c.label, sec=chordName(c.label,tonicPc,mode,!rel);
+      if(w>22){ const roman=chordName(c.label,cTonic,cMode,true)||c.label, abs=transposeLabel(c.label,tr,cFlats);
+        const pri=rel?roman:abs, sec=rel?abs:roman;
         ctx.fillStyle=C.text; ctx.font="650 15px system-ui"; ctx.fillText(pri,x0+9,CH_Y+28);
         if(sec&&sec!==pri){ ctx.fillStyle=C.dim; ctx.font="400 11px system-ui"; ctx.fillText(sec,x0+9,CH_Y+44);} } }
 
@@ -103,19 +121,19 @@
       ctx.font=(active?"700 ":"400 ")+"13px system-ui"; ctx.fillText(wd.word.trim(),x,LY_Y+16); }
 
     // piano roll
-    const notes=notesFor(); let lo=127,hi=0; for(const n of notes){if(n.pitch<lo)lo=n.pitch;if(n.pitch>hi)hi=n.pitch;}
+    const notes=notesFor(); let lo=127,hi=0; for(const n of notes){const p=dp(n.pitch); if(p<lo)lo=p;if(p>hi)hi=p;}
     if(lo>hi){lo=48;hi=72;} lo-=1; hi+=1; const span=hi-lo, rowH=ROLL_H/(span+1);
     const Y=(p)=>ROLL_Y+ROLL_H-(p-lo+1)*rowH;
     for(let p=lo;p<=hi;p++){ const pc=((p%12)+12)%12; ctx.fillStyle=WHITE.has(pc)?C.rowA:C.rowB; ctx.fillRect(0,Y(p),width,rowH); }
     for(const n of notes){ if(n.e<t0||n.s>t1)continue; const x=X(n.s), w=Math.max(3,(n.e-n.s)*pps);
-      ctx.globalAlpha=0.6+0.4*(n.vel/127); gnote(ctx,x,Y(n.pitch)+1,w,Math.max(3,rowH-2),noteColor(n),w>6); ctx.globalAlpha=1; }
+      ctx.globalAlpha=0.6+0.4*(n.vel/127); gnote(ctx,x,Y(dp(n.pitch))+1,w,Math.max(3,rowH-2),noteColor(n),w>6); ctx.globalAlpha=1; }
     // gutter keyboard ON TOP (notes slide behind), labels left of keys
     ctx.fillStyle=C.panel; ctx.fillRect(0,ROLL_Y,GUT,ROLL_H);
-    for(let p=lo;p<=hi;p++){ const pc=((p%12)+12)%12, y=Y(p), inKey=scale.has(pc);
+    for(let p=lo;p<=hi;p++){ const pc=((p%12)+12)%12, y=Y(p), inKey=effScale.has(pc);
       ctx.fillStyle=WHITE.has(pc)?"#e9edf3":"#15181f"; roundRect(ctx,LBL+1,y+0.5,GUT-LBL-2,rowH-1,2); ctx.fill();
-      if(inKey){ ctx.fillStyle=pcColor(pc,tonicPc); roundRect(ctx,LBL+2,y+1,4,rowH-2,1.5); ctx.fill(); }
+      if(inKey){ ctx.fillStyle=pcColor(pc,effTonic); roundRect(ctx,LBL+2,y+1,4,rowH-2,1.5); ctx.fill(); }
       if(pc===0){ ctx.fillStyle=C.dim; ctx.font="9px system-ui"; ctx.fillText("C"+(Math.floor(p/12)-1),1,y+rowH-1); }
-      else if(inKey&&rowH>10){ ctx.fillStyle=pcColor(pc,tonicPc); ctx.font="600 9px system-ui"; ctx.fillText(degreeLabel(pc,tonicPc),2,y+rowH-2); } }
+      else if(inKey&&rowH>10){ ctx.fillStyle=pcColor(pc,effTonic); ctx.font="600 9px system-ui"; ctx.fillText(degreeLabel(pc,effTonic),2,y+rowH-2); } }
 
     // ---- keyboard: name on every key, colored degree badge on in-scale keys
     // (incl. black keys), tonic underline. Range padded to whole octaves and
@@ -124,29 +142,29 @@
     let klo=Math.floor(lo/12)*12, khi=Math.floor(hi/12)*12+11;
     while(whitesIn(klo,khi) < width/74){ khi+=12; if(whitesIn(klo,khi) < width/74 && klo>12) klo-=12; if(khi>=120) break; }
     const layout=keyLayout(klo,khi,width), activeP=new Set();
-    for(const n of notes) if(now>=n.s&&now<n.e) activeP.add(n.pitch);
-    const NM=["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"], oct=(p)=>Math.floor(p/12)-1;
+    for(const n of notes) if(now>=n.s&&now<n.e) activeP.add(dp(n.pitch));
+    const oct=(p)=>Math.floor(p/12)-1;
     const bh=Math.round(KB_H*0.62), wr=Math.max(8,Math.min(14,(width/whitesIn(klo,khi))*0.21));
     const badge=(cx,cy,r,col,txt)=>{ ctx.beginPath(); ctx.arc(cx,cy,r,0,6.2832); ctx.fillStyle=col; ctx.fill();
       ctx.fillStyle="#fff"; ctx.font=`800 ${Math.round(r*1.05)}px system-ui`; ctx.textAlign="center"; ctx.textBaseline="middle"; ctx.fillText(txt,cx,cy+0.5); };
     ctx.fillStyle="#0c0e12"; ctx.fillRect(0,KB_Y-6,width,H-KB_Y+6);
     // white keys
-    for(let p=klo;p<=khi;p++){ const k=layout[p]; if(!k.white)continue; const pc=((p%12)+12)%12, on=activeP.has(p)||heldP.has(p), inK=scale.has(pc), cx=k.x+k.w/2;
+    for(let p=klo;p<=khi;p++){ const k=layout[p]; if(!k.white)continue; const pc=((p%12)+12)%12, on=activeP.has(p)||heldP.has(p), inK=effScale.has(pc), cx=k.x+k.w/2;
       const g=ctx.createLinearGradient(0,KB_Y,0,KB_Y+KB_H);
       g.addColorStop(0,"#f4f1e9"); g.addColorStop(1,"#dcd7c8");
       ctx.fillStyle=g; roundRect(ctx,k.x+1,KB_Y,k.w-2,KB_H-2,5); ctx.fill();
-      if(on){ ctx.globalAlpha=0.42; ctx.fillStyle=pcColor(pc,tonicPc); roundRect(ctx,k.x+1,KB_Y,k.w-2,KB_H-2,5); ctx.fill(); ctx.globalAlpha=1; }
-      if(inK) badge(cx,KB_Y+KB_H-23-wr,wr,pcColor(pc,tonicPc),degreeLabel(pc,tonicPc)); // just above the key label
-      ctx.fillStyle="#6b7280"; ctx.font="600 10px system-ui"; ctx.textAlign="center"; ctx.textBaseline="alphabetic"; ctx.fillText(NM[pc]+oct(p),cx,KB_Y+KB_H-8);
-      if(pc===tonicPc){ ctx.fillStyle="#f3ac60"; roundRect(ctx,cx-(k.w-2)*0.28,KB_Y+KB_H-5,(k.w-2)*0.56,3,1.5); ctx.fill(); } }
+      if(on){ ctx.globalAlpha=0.42; ctx.fillStyle=pcColor(pc,effTonic); roundRect(ctx,k.x+1,KB_Y,k.w-2,KB_H-2,5); ctx.fill(); ctx.globalAlpha=1; }
+      if(inK) badge(cx,KB_Y+KB_H-23-wr,wr,pcColor(pc,effTonic),degreeLabel(pc,effTonic)); // just above the key label
+      ctx.fillStyle="#6b7280"; ctx.font="600 10px system-ui"; ctx.textAlign="center"; ctx.textBaseline="alphabetic"; ctx.fillText(spellPc(pc,flats)+oct(p),cx,KB_Y+KB_H-8);
+      if(pc===effTonic){ ctx.fillStyle="#f3ac60"; roundRect(ctx,cx-(k.w-2)*0.28,KB_Y+KB_H-5,(k.w-2)*0.56,3,1.5); ctx.fill(); } }
     // black keys (on top)
-    for(let p=klo;p<=khi;p++){ const k=layout[p]; if(k.white)continue; const pc=((p%12)+12)%12, on=activeP.has(p)||heldP.has(p), inK=scale.has(pc), cx=k.x+k.w/2;
+    for(let p=klo;p<=khi;p++){ const k=layout[p]; if(k.white)continue; const pc=((p%12)+12)%12, on=activeP.has(p)||heldP.has(p), inK=effScale.has(pc), cx=k.x+k.w/2;
       const g=ctx.createLinearGradient(0,KB_Y,0,KB_Y+bh);
       g.addColorStop(0,"#2c333f"); g.addColorStop(1,"#10141b");
       ctx.fillStyle=g; roundRect(ctx,k.x,KB_Y,k.w,bh,4); ctx.fill();
-      if(on){ ctx.globalAlpha=0.6; ctx.fillStyle=pcColor(pc,tonicPc); roundRect(ctx,k.x,KB_Y,k.w,bh,4); ctx.fill(); ctx.globalAlpha=1; }
-      {const br=Math.max(7,wr-2); if(inK) badge(cx,KB_Y+bh-16-br,br,pcColor(pc,tonicPc),degreeLabel(pc,tonicPc));} // just above the key label
-      ctx.fillStyle="#aab0bd"; ctx.font="600 9px system-ui"; ctx.textAlign="center"; ctx.textBaseline="alphabetic"; ctx.fillText(NM[pc]+oct(p),cx,KB_Y+bh-6); }
+      if(on){ ctx.globalAlpha=0.6; ctx.fillStyle=pcColor(pc,effTonic); roundRect(ctx,k.x,KB_Y,k.w,bh,4); ctx.fill(); ctx.globalAlpha=1; }
+      {const br=Math.max(7,wr-2); if(inK) badge(cx,KB_Y+bh-16-br,br,pcColor(pc,effTonic),degreeLabel(pc,effTonic));} // just above the key label
+      ctx.fillStyle="#aab0bd"; ctx.font="600 9px system-ui"; ctx.textAlign="center"; ctx.textBaseline="alphabetic"; ctx.fillText(spellPc(pc,flats)+oct(p),cx,KB_Y+bh-6); }
     ctx.textAlign="left"; ctx.textBaseline="alphabetic";
 
     // loop region overlay
@@ -188,9 +206,10 @@
       if(hit!=null) playNote(hit); return; }
     // roll body: click a note to hear it (exact drawn-rectangle hit-test)
     if(y>=ROLL_Y && y<ROLL_Y+ROLL_H && x>=GUT){
+      const tr=get(transpose);
       const Xt=(t)=>geom.originX+(t-geom.originT)*geom.pps, Yp=(pit)=>ROLL_Y+ROLL_H-(pit-view.lo+1)*view.rowH;
-      for(const n of notesFor()){ const nx=Xt(n.s), nw=Math.max(3,(n.e-n.s)*geom.pps), ny=Yp(n.pitch);
-        if(x>=nx-2 && x<=nx+nw+2 && y>=ny-1 && y<=ny+view.rowH+1){ playNote(n.pitch); return; } } }
+      for(const n of notesFor()){ const nx=Xt(n.s), nw=Math.max(3,(n.e-n.s)*geom.pps), ny=Yp(n.pitch+tr);
+        if(x>=nx-2 && x<=nx+nw+2 && y>=ny-1 && y<=ny+view.rowH+1){ playNote(n.pitch+tr); return; } } }
     // start a drag (also sweep-collects notes). In a loop the view is fixed so the
     // playhead follows the cursor (seek); otherwise we grab + pan the timeline.
     moved=false; heldP=new Set();
@@ -208,7 +227,7 @@
                        : scrub.grabT-(cx-geom.originX)/geom.pps;
       if(scrub.seek && lp) t=Math.max(lp.start,Math.min(lp.end,t));
       engine.seek(t); dragLo=Math.min(dragLo,t); dragHi=Math.max(dragHi,t);
-      const hp=new Set(); for(const n of notesFor()) if(n.s<dragHi && n.e>dragLo) hp.add(n.pitch); heldP=hp; return; }
+      const hp=new Set(); const tr=get(transpose); for(const n of notesFor()) if(n.s<dragHi && n.e>dragLo) hp.add(n.pitch+tr); heldP=hp; return; }
     // idle hover: show a resize cursor near a loop edge
     const lp=get(transport).loop;
     if(lp){ const r=wrap.getBoundingClientRect(), x=e.clientX-r.left, y=e.clientY-r.top, Xt=(tt)=>geom.originX+(tt-geom.originT)*geom.pps;
@@ -228,7 +247,8 @@
   onMount(()=>{ const ro=new ResizeObserver(()=>{width=wrap.clientWidth; height=wrap.clientHeight;});
     ro.observe(wrap); width=wrap.clientWidth; height=wrap.clientHeight; draw();
     const unsub=selectedStem.subscribe(()=>{heldP=new Set();}); // clear sweep on stem change
-    return ()=>{cancelAnimationFrame(raf); ro.disconnect(); unsub();}; });
+    const unsubT=transpose.subscribe(()=>{heldP=new Set();}); // stored pitches are display-space
+    return ()=>{cancelAnimationFrame(raf); ro.disconnect(); unsub(); unsubT();}; });
 </script>
 
 <div class="wrap" bind:this={wrap} onpointerdown={down} onpointermove={move} onpointerup={up} onwheel={wheel}>
