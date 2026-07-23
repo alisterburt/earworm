@@ -41,6 +41,10 @@
   const chords = song.chords || [];
   const selOr = () => get(selectedStem) || stems[0];
   const notesFor = () => song.stems[selOr()]?.[get(cleanMidi) ? "notes_clean" : "notes"] || [];
+  // dev: velocity floor — notes below it are hidden everywhere (roll, keyboard,
+  // click, sweep); the rest render with velocity-proportional opacity.
+  let velMin = $state(0);
+  const visNotes = () => notesFor().filter((n) => (n.vel ?? 127) >= velMin);
   // colour each note by its scale degree in the key active at the note's time
   const noteColor = (n) => { const tp = tonicAtT(n.s);
     return MONO.has(selOr()) ? pcColor(((n.pitch%12)+12)%12, tp)
@@ -121,12 +125,12 @@
       ctx.font=(active?"700 ":"400 ")+"13px system-ui"; ctx.fillText(wd.word.trim(),x,LY_Y+16); }
 
     // piano roll
-    const notes=notesFor(); let lo=127,hi=0; for(const n of notes){const p=dp(n.pitch); if(p<lo)lo=p;if(p>hi)hi=p;}
+    const notes=visNotes(); let lo=127,hi=0; for(const n of notes){const p=dp(n.pitch); if(p<lo)lo=p;if(p>hi)hi=p;}
     if(lo>hi){lo=48;hi=72;} lo-=1; hi+=1; const span=hi-lo, rowH=ROLL_H/(span+1);
     const Y=(p)=>ROLL_Y+ROLL_H-(p-lo+1)*rowH;
     for(let p=lo;p<=hi;p++){ const pc=((p%12)+12)%12; ctx.fillStyle=WHITE.has(pc)?C.rowA:C.rowB; ctx.fillRect(0,Y(p),width,rowH); }
     for(const n of notes){ if(n.e<t0||n.s>t1)continue; const x=X(n.s), w=Math.max(3,(n.e-n.s)*pps);
-      ctx.globalAlpha=0.6+0.4*(n.vel/127); gnote(ctx,x,Y(dp(n.pitch))+1,w,Math.max(3,rowH-2),noteColor(n),w>6); ctx.globalAlpha=1; }
+      ctx.globalAlpha=0.15+0.85*((n.vel??127)/127); gnote(ctx,x,Y(dp(n.pitch))+1,w,Math.max(3,rowH-2),noteColor(n),w>6); ctx.globalAlpha=1; }
     // gutter keyboard ON TOP (notes slide behind), labels left of keys
     ctx.fillStyle=C.panel; ctx.fillRect(0,ROLL_Y,GUT,ROLL_H);
     for(let p=lo;p<=hi;p++){ const pc=((p%12)+12)%12, y=Y(p), inKey=effScale.has(pc);
@@ -208,7 +212,7 @@
     if(y>=ROLL_Y && y<ROLL_Y+ROLL_H && x>=GUT){
       const tr=get(transpose);
       const Xt=(t)=>geom.originX+(t-geom.originT)*geom.pps, Yp=(pit)=>ROLL_Y+ROLL_H-(pit-view.lo+1)*view.rowH;
-      for(const n of notesFor()){ const nx=Xt(n.s), nw=Math.max(3,(n.e-n.s)*geom.pps), ny=Yp(n.pitch+tr);
+      for(const n of visNotes()){ const nx=Xt(n.s), nw=Math.max(3,(n.e-n.s)*geom.pps), ny=Yp(n.pitch+tr);
         if(x>=nx-2 && x<=nx+nw+2 && y>=ny-1 && y<=ny+view.rowH+1){ playNote(n.pitch+tr); return; } } }
     // start a drag (also sweep-collects notes). In a loop the view is fixed so the
     // playhead follows the cursor (seek); otherwise we grab + pan the timeline.
@@ -227,7 +231,7 @@
                        : scrub.grabT-(cx-geom.originX)/geom.pps;
       if(scrub.seek && lp) t=Math.max(lp.start,Math.min(lp.end,t));
       engine.seek(t); dragLo=Math.min(dragLo,t); dragHi=Math.max(dragHi,t);
-      const hp=new Set(); const tr=get(transpose); for(const n of notesFor()) if(n.s<dragHi && n.e>dragLo) hp.add(n.pitch+tr); heldP=hp; return; }
+      const hp=new Set(); const tr=get(transpose); for(const n of visNotes()) if(n.s<dragHi && n.e>dragLo) hp.add(n.pitch+tr); heldP=hp; return; }
     // idle hover: show a resize cursor near a loop edge
     const lp=get(transport).loop;
     if(lp){ const r=wrap.getBoundingClientRect(), x=e.clientX-r.left, y=e.clientY-r.top, Xt=(tt)=>geom.originX+(tt-geom.originT)*geom.pps;
@@ -259,6 +263,10 @@
   {#if $transport.loop}
     <button class="clearloop" title="clear loop" onclick={(e)=>{e.stopPropagation(); engine.setLoop(null);}}>✕</button>
   {/if}
+  <div class="velgate" title="hide notes below this velocity">
+    <span>vel ≥ {velMin}</span>
+    <input type="range" min="0" max="127" bind:value={velMin} />
+  </div>
 </div>
 
 <style>
@@ -274,6 +282,13 @@
   .bars button { padding: 1px 6px; line-height: 1.3; background: none; border: none; font-size: 13px; }
   .bars button:hover { color: var(--text); }
   .bars span { font-variant-numeric: tabular-nums; line-height: 1; }
+  .velgate { position: absolute; right: 8px; bottom: 140px; /* keyboard is 132px tall */
+    display: flex; align-items: center; gap: 6px; padding: 3px 7px;
+    background: color-mix(in srgb, var(--surface) 82%, transparent);
+    border: 1px solid var(--border); border-radius: var(--r-sm); backdrop-filter: blur(6px);
+    color: var(--text-dim); font-size: 10px; }
+  .velgate span { font-variant-numeric: tabular-nums; white-space: nowrap; min-width: 44px; }
+  .velgate input { width: 90px; accent-color: var(--accent); }
   .clearloop { position: absolute; left: 50px; top: 56px; width: 16px; height: 16px; padding: 0;
     display: grid; place-items: center; font-size: 9px; line-height: 1; border-radius: 50%;
     background: var(--accent); color: var(--accent-contrast); border-color: var(--accent); }
