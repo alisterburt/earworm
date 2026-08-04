@@ -1,11 +1,11 @@
 <script>
   import { tokenizeDegrees, tokenSemitone, PALETTE } from "../lib/sonofield.js";
-  let { text = "" } = $props();
+  let { text = "", mode = "major" } = $props();
   // A token that is only punctuation (a bare "/", "·", "-") is a phrase separator,
   // not a chord — render it as a faint divider. Slash-chords like "V/♭VII" still
   // contain letters/numerals so they remain a single chip.
   const isSep = (t) => !/[A-Za-z0-9]/.test(t);
-  let toks = $derived(tokenizeDegrees(text).map((t) => ({ t, sep: isSep(t), semi: tokenSemitone(t) })));
+  let toks = $derived(tokenizeDegrees(text).map((t) => ({ t, sep: isSep(t), semi: tokenSemitone(t, mode) })));
 </script>
 
 <span class="chips">

@@ -114,14 +114,17 @@ export function chordRoman(label, tonicPc, mode) {
 }
 
 // semitone-above-tonic for a roman-numeral or degree token (for colouring)
-export function tokenSemitone(tok) {
+export function tokenSemitone(tok, mode = "major") {
   if (!tok) return null;
   let m = /^([#b♭♯]?)([ivIV]+)/.exec(tok.trim());
   if (m) {
     const map = { i: 0, ii: 1, iii: 2, iv: 3, v: 4, vi: 5, vii: 6 };
     const deg = map[m[2].toLowerCase()];
     if (deg == null) return null;
-    let semi = [0, 2, 4, 5, 7, 9, 11][deg];
+    // roman numerals are mode-relative (minor VI = pc 8, i.e. ♭6) so the colour
+    // matches MAJ_NUM/MIN_NUM labelling; arabic degrees below stay major-relative
+    // (b6 etc.) to match the keyboard badges.
+    let semi = (mode === "minor" ? [0, 2, 3, 5, 7, 8, 10] : [0, 2, 4, 5, 7, 9, 11])[deg];
     if (m[1] === "#" || m[1] === "♯") semi++;
     if (m[1] === "b" || m[1] === "♭") semi--;
     return ((semi % 12) + 12) % 12;

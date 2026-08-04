@@ -3,7 +3,7 @@
   import { get } from "svelte/store";
   import { transport } from "../lib/engine.js";
   import { zoomBars, relativeMode, selectedStem, cleanMidi, transpose } from "../lib/stores.js";
-  import { notePc, pcColor, degreeLabel, keyScalePcs, chordRootPc, chordName, chordColorAt,
+  import { notePc, pcColor, degreeLabel, keyScalePcs, chordRootPc, chordName,
     spellPc, keyUsesFlats, transposeLabel, keyAt } from "../lib/sonofield.js";
   import { melodicStems } from "../lib/stems.js";
   import { playNote } from "../lib/synth.js";
@@ -21,7 +21,6 @@
   const GUT = 52, LBL = 24, PHF = 0.2;
   const LYRIC_OFFSET = 0.0; // word timings repaired upstream (lyrics.fix_word_timing)
   const WHITE = new Set([0,2,4,5,7,9,11]);
-  const MONO = new Set(["vocals","bass"]);
   const C = { text:"#eef1f6", dim:"#9aa3b2", faint:"#6b7280", panel:"#15171c",
               rowA:"#171a21", rowB:"#11141a", beat:"#20242d", bar:"#39414f", ph:"#ff5d5d", loop:"#6a7bff" };
 
@@ -44,11 +43,32 @@
   // dev: velocity floor — notes below it are hidden everywhere (roll, keyboard,
   // click, sweep); the rest render with velocity-proportional opacity.
   let velMin = $state(0);
+  // roll note colouring, per stem: monophonic stems (vocals/bass) read best by
+  // scale degree, chordal stems by chord block — those are the defaults; the
+  // toggle overrides the current stem for the session.
+  const MONO = new Set(["vocals", "bass"]);
+  let colorOverride = $state({});
+  const rollMode = () => colorOverride[selOr()] ?? (MONO.has(selOr()) ? "degree" : "chord");
+  const curStem = $derived($selectedStem || stems[0]);
+  const curMode = $derived(colorOverride[curStem] ?? (MONO.has(curStem) ? "degree" : "chord"));
   const visNotes = () => notesFor().filter((n) => (n.vel ?? 127) >= velMin);
-  // colour each note by its scale degree in the key active at the note's time
-  const noteColor = (n) => { const tp = tonicAtT(n.s);
-    return MONO.has(selOr()) ? pcColor(((n.pitch%12)+12)%12, tp)
-                             : (chordColorAt(chords, n.s, tp) || pcColor(((n.pitch%12)+12)%12, tp)); };
+  const degColor = (n) => pcColor(((n.pitch%12)+12)%12, tonicAtT(n.s));
+  // chord mode: colour each part of a note by the chord block it falls in, so a
+  // note straddling a chord change is split at the boundary rather than painted
+  // wholly by whatever chord its onset lands in. Gaps and N chords -> degree.
+  const noteSegs = (n) => {
+    if (rollMode() !== "chord") return [{ s: n.s, e: n.e, color: degColor(n) }];
+    const segs = []; let t = n.s;
+    for (const c of chords) {
+      if (c.end <= t || c.start >= n.e) continue;
+      if (c.start > t) segs.push({ s: t, e: c.start, color: degColor(n) });
+      const s0 = Math.max(t, c.start), s1 = Math.min(n.e, c.end), r = chordRootPc(c.label);
+      segs.push({ s: s0, e: s1, color: r == null ? degColor(n) : pcColor(r, tonicAtT(s0)) });
+      t = s1; if (t >= n.e) break;
+    }
+    if (t < n.e) segs.push({ s: t, e: n.e, color: degColor(n) });
+    return segs;
+  };
 
   function roundRect(ctx,x,y,w,h,r){ r=Math.max(0,Math.min(r,h/2,w/2)); ctx.beginPath();
     ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r);
@@ -130,7 +150,14 @@
     const Y=(p)=>ROLL_Y+ROLL_H-(p-lo+1)*rowH;
     for(let p=lo;p<=hi;p++){ const pc=((p%12)+12)%12; ctx.fillStyle=WHITE.has(pc)?C.rowA:C.rowB; ctx.fillRect(0,Y(p),width,rowH); }
     for(const n of notes){ if(n.e<t0||n.s>t1)continue; const x=X(n.s), w=Math.max(3,(n.e-n.s)*pps);
-      ctx.globalAlpha=0.15+0.85*((n.vel??127)/127); gnote(ctx,x,Y(dp(n.pitch))+1,w,Math.max(3,rowH-2),noteColor(n),w>6); ctx.globalAlpha=1; }
+      const ny=Y(dp(n.pitch))+1, nh=Math.max(3,rowH-2), segs=noteSegs(n);
+      ctx.globalAlpha=0.15+0.85*((n.vel??127)/127);
+      if(segs.length===1) gnote(ctx,x,ny,w,nh,segs[0].color,w>6);
+      else for(const sg of segs){ const sx=X(sg.s), sw=X(sg.e)-sx; if(sw<=0)continue;
+        // clip to the segment so each slice keeps the full note's rounded shape/gloss
+        ctx.save(); ctx.beginPath(); ctx.rect(sx,ny-1,sw,nh+2); ctx.clip();
+        gnote(ctx,x,ny,w,nh,sg.color,w>6); ctx.restore(); }
+      ctx.globalAlpha=1; }
     // gutter keyboard ON TOP (notes slide behind), labels left of keys
     ctx.fillStyle=C.panel; ctx.fillRect(0,ROLL_Y,GUT,ROLL_H);
     for(let p=lo;p<=hi;p++){ const pc=((p%12)+12)%12, y=Y(p), inKey=effScale.has(pc);
@@ -263,9 +290,15 @@
   {#if $transport.loop}
     <button class="clearloop" title="clear loop" onclick={(e)=>{e.stopPropagation(); engine.setLoop(null);}}>✕</button>
   {/if}
-  <div class="velgate" title="hide notes below this velocity">
-    <span>vel ≥ {velMin}</span>
-    <input type="range" min="0" max="127" bind:value={velMin} />
+  <div class="rollctl">
+    <button class="colormode" title="colour notes by chord block or by scale degree"
+      onclick={() => colorOverride[curStem] = curMode === "chord" ? "degree" : "chord"}>
+      {curMode === "chord" ? "chord colours" : "degree colours"}
+    </button>
+    <div class="velgate" title="hide notes below this velocity">
+      <span>velocity ≥ {velMin}</span>
+      <input type="range" min="0" max="127" bind:value={velMin} />
+    </div>
   </div>
 </div>
 
@@ -282,12 +315,16 @@
   .bars button { padding: 1px 6px; line-height: 1.3; background: none; border: none; font-size: 13px; }
   .bars button:hover { color: var(--text); }
   .bars span { font-variant-numeric: tabular-nums; line-height: 1; }
-  .velgate { position: absolute; right: 8px; bottom: 140px; /* keyboard is 132px tall */
-    display: flex; align-items: center; gap: 6px; padding: 3px 7px;
+  .rollctl { position: absolute; right: 8px; bottom: 140px; /* keyboard is 132px tall */
+    display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+  .rollctl > * {
     background: color-mix(in srgb, var(--surface) 82%, transparent);
     border: 1px solid var(--border); border-radius: var(--r-sm); backdrop-filter: blur(6px);
-    color: var(--text-dim); font-size: 10px; }
-  .velgate span { font-variant-numeric: tabular-nums; white-space: nowrap; min-width: 44px; }
+    color: var(--text-dim); font-size: 10px; padding: 3px 7px; }
+  .colormode { font-size: 12px; padding: 5px 12px; }
+  .colormode:hover { color: var(--text); }
+  .velgate { display: flex; align-items: center; gap: 6px; font-size: 12px; padding: 5px 10px; }
+  .velgate span { font-variant-numeric: tabular-nums; white-space: nowrap; min-width: 84px; }
   .velgate input { width: 90px; accent-color: var(--accent); }
   .clearloop { position: absolute; left: 50px; top: 56px; width: 16px; height: 16px; padding: 0;
     display: grid; place-items: center; font-size: 9px; line-height: 1; border-radius: 50%;

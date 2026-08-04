@@ -14,8 +14,11 @@
   // Colour each chip by its scale degree (key-independent), so it matches the
   // degree shown AND stays correct for motifs whose key isn't the song's global
   // key. Falls back to pitch-class colour, then neutral.
+  // degrees are relative to the motif's local key when it has one
+  const motifMode = motif.key ? (/minor/i.test(motif.key) ? "minor" : "major")
+                              : (song.key?.mode || "major");
   const chipColor = (tk) => {
-    const semi = tokenSemitone(tk.deg);
+    const semi = tokenSemitone(tk.deg, motifMode);
     return semi != null ? PALETTE[semi] : (tk.pc != null ? pcColor(tk.pc, tonicPc) : "#5b6270");
   };
   // Motif's local key, shown only when it differs from the song's global key.
